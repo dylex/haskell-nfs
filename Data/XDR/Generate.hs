@@ -1,32 +1,36 @@
+
 {-# LANGUAGE ViewPatterns #-}
 module Data.XDR.Generate
   ( generate
   ) where
 
+import           Control.Arrow ((***))
 import           Data.Char (toLower, toUpper)
 import qualified Data.Map as Map
+import qualified Language.Haskell.Exts.Build as HS
 import qualified Language.Haskell.Exts.Syntax as HS
 
-import qualified Data.XDR.Types as XDR
 import           Data.XDR.Specification
 import qualified Data.XDR.Parse as XDR
 
 xdrModule :: HS.ModuleName ()
 xdrModule = HS.ModuleName () "XDR"
 
+unQual :: String -> HS.QName ()
+unQual = HS.UnQual () . HS.name
+
 identifierName :: XDR.Scope -> Bool -> Identifier -> HS.Name ()
-identifierName s u i@(~(h:r)) = HS.Ident ()
+identifierName s u i@(~(h:r)) = HS.name
   $ (if any XDR.bindingInitCaseConflict $ Map.lookup i s then (++"'") else id)
   $ (if u then toUpper else toLower) h : r
 
 constantType :: HS.Type ()
 constantType = HS.TyForall ()
-  (Just [HS.UnkindedVar () v])
-  (Just $ HS.CxSingle () $ HS.ClassA () (HS.UnQual () $ HS.Ident () "Integral") [t])
+  Nothing
+  (Just $ HS.CxSingle () $ HS.ClassA () (unQual "Integral") [t])
   t
   where
-  t = HS.TyVar () v
-  v = HS.Ident () "a"
+  t = HS.TyVar () $ HS.name "a"
 
 primType :: TypeSpecifier -> Maybe String
 primType TypeInt           = Just "Int"
@@ -39,28 +43,56 @@ primType TypeQuadruple     = Just "Quadruple"
 primType TypeBool          = Just "Bool"
 primType _                 = Nothing
 
+instDecl :: String -> HS.Name () -> [HS.Decl ()] -> HS.Decl ()
+instDecl c t = HS.InstDecl () Nothing (HS.IRule () Nothing Nothing (HS.IHApp () (HS.IHCon () (unQual c)) (HS.TyCon () (HS.UnQual () t)))) . Just . map (HS.InsDecl ())
+
 definition :: XDR.Scope -> Definition -> [HS.Decl ()]
-definition s (Definition i (Constant v)) =
-  [ HS.TypeSig () [n] constantType
-  , HS.PatBind () (HS.PVar () n) (HS.UnGuardedRhs () $ HS.Lit () $ HS.Int () v (show v)) Nothing
+definition scope (Definition n (Constant v)) =
+  [ HS.TypeSig () [hn] constantType
+  , HS.nameBind hn (HS.intE v)
   ] where
-  n = identifierName s False i
-definition s (Definition i (TypeDef (TypeSingle (primType -> Just t)))) =
-  [ HS.TypeDecl () (HS.DHead () n) $ HS.TyCon () $ HS.Qual () xdrModule $ HS.Ident () t
+  hn = identifierName scope False n
+definition scope (Definition n (TypeDef (TypeSingle (primType -> Just t)))) =
+  [ HS.TypeDecl () (HS.DHead () hn) $ HS.TyCon () $ HS.Qual () xdrModule $ HS.name t
   ] where
-  n = identifierName s True i
-definition s (Definition i (TypeDef (TypeSingle (TypeIdentifier ti)))) =
-  [ HS.TypeDecl () (HS.DHead () n) $ HS.TyCon () $ HS.UnQual () tn
+  hn = identifierName scope True n
+definition scope (Definition n (TypeDef (TypeSingle (TypeEnum (EnumBody el))))) =
+  [ HS.DataDecl () (HS.DataType ()) Nothing (HS.DHead () hn)
+    (map (HS.QualConDecl () Nothing Nothing . flip (HS.ConDecl ()) [] . fst) hel) Nothing
+  , instDecl "Enum" hn
+    [ HS.FunBind () $ map (\(i,v) ->
+        HS.Match () (HS.name "fromEnum") [HS.pApp i []] (HS.UnGuardedRhs () $ HS.intE v) Nothing)
+      hel
+    , HS.nameBind (HS.name "toEnum") (HS.var $ HS.name "xdrToEnum")
+    ]
+  , instDecl "XDR" hn
+    [ HS.nameBind (HS.name "xdrPut") (HS.var $ HS.name "xdrPutEnum")
+    , HS.nameBind (HS.name "xdrGet") (HS.var $ HS.name "xdrGetEnum")
+    ]
+  , instDecl "XDREnum" hn
+    [ HS.FunBind () $ map (\(i,v) ->
+        HS.Match () (HS.name "toXDREnum") [HS.intP v] (HS.UnGuardedRhs () $ HS.app (HS.Con () $ unQual "Just") $ HS.Con () $ HS.UnQual () i) Nothing)
+      hel ++
+      [ HS.Match () (HS.name "toXDREnum") [HS.PWildCard ()] (HS.UnGuardedRhs () $ HS.Con () $ unQual "Nothing") Nothing]
+    ]
   ] where
-  n = identifierName s True i
-  tn = identifierName s True ti
+  hn = identifierName scope True n
+  hel = map (identifierName scope True *** toInteger) el
+definition scope (Definition n (TypeDef (TypeSingle (TypeIdentifier t)))) =
+  [ HS.TypeDecl () (HS.DHead () hn) $ HS.TyCon () $ HS.UnQual () ht
+  ] where
+  hn = identifierName scope True n
+  ht = identifierName scope True t
 definition _ _ = []
 
-generate :: String -> XDR.Scope -> Specification -> HS.Module ()
-generate n s l = HS.Module ()
+generate :: XDR.Scope -> String -> Specification -> HS.Module ()
+generate s n l = HS.Module ()
   (Just $ HS.ModuleHead () (HS.ModuleName () n) Nothing Nothing)
   []
-  [ HS.ImportDecl () (HS.ModuleName () "Prelude") False False False Nothing Nothing (Just $ HS.ImportSpecList () False [])
+  [ HS.ImportDecl () (HS.ModuleName () "Prelude") False False False Nothing Nothing
+    $ Just $ HS.ImportSpecList () False $ map (HS.IVar () . HS.name) ["Integral"] ++ map (HS.IThingAll () . HS.name) ["Enum", "Maybe"]
   , HS.ImportDecl () (HS.ModuleName () "Data.XDR.Types") True False False Nothing (Just xdrModule) Nothing
+  , HS.ImportDecl () (HS.ModuleName () "Data.XDR.Serial") False False False Nothing Nothing Nothing
+  , HS.ImportDecl () (HS.ModuleName () "Data.XDR.Specification") True False False Nothing (Just xdrModule) Nothing
   ]
   $ concatMap (definition s) l

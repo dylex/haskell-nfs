@@ -39,4 +39,4 @@ main = do
       exitFailure)
     return
     =<< XDR.parseFile f
-  putStrLn $ Language.Haskell.Exts.Pretty.prettyPrint $ XDR.generate "XDR" s d
+  putStrLn $ Language.Haskell.Exts.Pretty.prettyPrint $ XDR.generate s "XDR" d

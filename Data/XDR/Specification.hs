@@ -78,7 +78,7 @@ newtype StructBody = StructBody
 
 data UnionArm = UnionArm
   { unionCase :: !Integer
-  , unionCaseLiteral :: String
+  , unionCaseLiteral :: String -- ^The literal string found after "case", for labeling
   , unionDeclaration :: OptionalDeclaration
   }
   deriving (Show)
