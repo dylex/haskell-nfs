@@ -22,10 +22,14 @@ library
     Data.XDR.Types
     Data.XDR.Specification
     Data.XDR.Parse
+    Data.XDR.Serial
+    Data.XDR.Generate
   build-depends:       
     base >=4.8 && <5,
     bytestring,
+    cereal >=0.5.4,
     containers,
+    haskell-src-exts >= 1.18,
     parsec
   default-language: Haskell2010
   ghc-options: -Wall

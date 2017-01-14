@@ -1,18 +1,19 @@
--- | XDR Parser
+-- | XDR Parser for .x files, as per RFC4506
 
 {-# LANGUAGE TupleSections #-}
 module Data.XDR.Parse
-  ( parseFile
+  ( Binding(..)
+  , Scope
+  , parseFile
   ) where
 
 import           Control.Applicative ((<|>))
-import           Control.Arrow ((&&&))
-import           Control.Monad (void)
+import           Control.Arrow (second)
+import           Control.Monad (void, liftM2)
 import qualified Data.ByteString.Lazy.Char8 as BSLC
-import           Data.Char (digitToInt)
+import           Data.Char (digitToInt, isLower, isUpper, toLower, toUpper)
 import           Data.Functor.Identity (Identity)
-import qualified Data.Map.Lazy as MapL
-import qualified Data.Map.Strict as MapS
+import qualified Data.Map as Map
 import           Data.Maybe (catMaybes, mapMaybe)
 import qualified Data.Set as Set
 import qualified Text.Parsec as P
@@ -21,13 +22,41 @@ import qualified Text.Parsec.Token as PT
 import qualified Data.XDR.Types as XDR
 import           Data.XDR.Specification hiding (arrayLength)
 
-type Scope = MapL.Map Identifier Definition
+data Binding = Binding
+  { bindingInitCaseConflict :: !Bool -- ^Same name as another identifier modulo first character case
+  , bindingDefinition :: !DefinitionBody
+  }
+  deriving (Show)
 
-baseScope :: Scope
-baseScope = MapL.fromList $ (definitionIdentifier &&& id) <$> baseSpecification
-
+type Scope = Map.Map Identifier Binding
 type Stream = BSLC.ByteString
 type Parser = P.Parsec Stream Scope
+
+tupleM :: Monad m => m a -> m b -> m (a, b)
+tupleM = liftM2 (,)
+
+baseScope :: Scope
+baseScope = Map.fromList $
+  ("bool",        Binding False $ TypeDef $ TypeSingle $ TypeEnum $ EnumBody $ boolValues)
+  : map (second $ Binding False . TypeDef . TypeSingle)
+    [ ("int",       TypeInt)
+    , ("unsigned",  TypeUnsignedInt)
+    , ("hyper",     TypeHyper)
+    , ("float",     TypeFloat)
+    , ("double",    TypeDouble)
+    , ("quadruple", TypeQuadruple)
+    ]
+  ++ map (second $ Binding False . Constant . toInteger) boolValues
+
+addScope :: Definition -> Parser ()
+addScope (Definition i b) = do
+  case b of
+    TypeDef t -> void $ resolveTypeDescriptor t
+    _ -> return ()
+  s <- P.getState
+  case Map.insertLookupWithKey (\_ -> const) i (Binding (Map.member (toggleInitCase i) s) b) s of
+    (Nothing, s') -> P.putState s'
+    _ -> fail $ "duplicate identifier: " ++ show i
 
 token :: PT.GenTokenParser Stream a Identity
 token = PT.makeTokenParser PT.LanguageDef
@@ -115,23 +144,18 @@ constant = (PT.lexeme token $
   dec = number 10 P.digit
   number base digit = foldl (\x d -> base*x + toInteger (digitToInt d)) 0 <$> P.many1 digit
 
-valueFrom :: Integral n => MapS.Map Identifier n -> Parser n
-valueFrom m = (fi =<< constant) <|> do
+value :: Integral n => Parser n
+value = fi =<< constant <|> do
   v <- identifier
-  maybe (do
-    s <- P.getState
-    case MapL.lookup v s of
-      Just (Constant _ n) -> fi n
-      _ -> fail $ "undefined constant: " ++ show v)
-    return $ MapS.lookup v m
+  s <- P.getState
+  case Map.lookup v s of
+    Just (Binding _ (Constant n)) -> return n
+    _ -> fail $ "undefined constant: " ++ show v
   where
   fi n
     | n == toInteger n' = return n'
     | otherwise = fail "invalid constant"
     where n' = fromInteger n
-
-value :: Integral n => Parser n
-value = valueFrom MapS.empty
 
 typeSpecifier :: Parser TypeSpecifier
 typeSpecifier = P.choice
@@ -162,9 +186,10 @@ checkUnique t = ui Set.empty where
 enumBody :: Parser EnumBody
 enumBody = do
   l <- PT.braces token $ PT.commaSep1 token $
-    (,) <$> identifier <*> (PT.symbol token "=" *> value)
+    tupleM identifier (PT.symbol token "=" *> value)
   _ <- checkUnique "enum identifier" $ fst <$> l
   _ <- checkUnique "enum value" $ snd <$> l
+  mapM_ (\(i, v) -> addScope $ Definition i $ Constant $ toInteger v) l
   return $ EnumBody l
 
 structBody :: Parser StructBody
@@ -181,56 +206,60 @@ unionBody = do
   p <- case r of
     TypeSingle TypeInt -> return $ toInteger <$> (value :: Parser XDR.Int)
     TypeSingle TypeUnsignedInt -> return $ toInteger <$> (value :: Parser XDR.UnsignedInt)
-    TypeSingle (TypeEnum (EnumBody v)) -> return $ toInteger <$> valueFrom (MapS.fromList v)
+    TypeSingle TypeBool -> return $ valid boolValues =<< value
+    TypeSingle (TypeEnum (EnumBody v)) -> return $ valid v =<< value
     _ -> fail "invalid discriminant declaration"
   PT.braces token $ do
-    l <- endSemi1 ((,)
-      <$> P.many1 (reserved "case" *> p <* PT.colon token)
-      <*> voidableDeclaration)
+    l <- endSemi1 (tupleM
+      (P.many1 $ reserved "case" *> p <* PT.colon token)
+      voidableDeclaration)
     _ <- checkUnique "union member" $ mapMaybe (fmap declarationIdentifier . snd) l
     _ <- checkUnique "union case" $ fst =<< l
     f <- P.optionMaybe $ reserved "default" *> PT.colon token *> voidableDeclaration <* PT.semi token
     return $ UnionBody d [ (c, b) | (cs, b) <- l, c <- cs ] f
+  where
+  valid l n
+    | any ((n ==) . snd) l = return $ toInteger n
+    | otherwise = fail "invalid enum value"
 
 -- |Expand 'TypeSingle' 'TypeIdentifier'
 resolveTypeDescriptor :: TypeDescriptor -> Parser TypeDescriptor
-resolveTypeDescriptor (TypeSingle TypeBool) = resolveTypeDescriptor (TypeSingle (TypeIdentifier "bool"))
 resolveTypeDescriptor (TypeSingle (TypeIdentifier i)) = do
   s <- P.getState
-  case MapL.lookup i s of
-    Just (TypeDef _ t) -> resolveTypeDescriptor t
+  case Map.lookup i s of
+    Just (Binding _ (TypeDef t)) -> resolveTypeDescriptor t
     _ -> fail $ "undefined type: " ++ show i
 resolveTypeDescriptor d = return d
 
 def :: Parser Definition
 def = constantDef <|> typeDef where
-  constantDef = Constant
+  constantDef = Definition
     <$> (reserved "const" *> identifier)
-    <*> (PT.symbol token "=" *> constant)
+    <*> (PT.symbol token "=" *> (Constant <$> constant))
   typeDef =
         reserved "typedef" *> (declDef <$> declaration)
-    <|> TypeDef <$> (reserved "enum"   *> identifier) <*> (TypeSingle . TypeEnum   <$> enumBody)
-    <|> TypeDef <$> (reserved "struct" *> identifier) <*> (TypeSingle . TypeStruct <$> structBody)
-    <|> TypeDef <$> (reserved "union"  *> identifier) <*> (TypeSingle . TypeUnion  <$> unionBody)
-  declDef (Declaration i t) = TypeDef i t
+    <|> Definition <$> (reserved "enum"   *> identifier) <*> (TypeDef . TypeSingle . TypeEnum   <$> enumBody)
+    <|> Definition <$> (reserved "struct" *> identifier) <*> (TypeDef . TypeSingle . TypeStruct <$> structBody)
+    <|> Definition <$> (reserved "union"  *> identifier) <*> (TypeDef . TypeSingle . TypeUnion  <$> unionBody)
+  declDef (Declaration i t) = Definition i $ TypeDef t
+
+toggleInitCase :: String -> String
+toggleInitCase (c:s)
+  | isUpper c = toLower c:s
+  | isLower c = toUpper c:s
+toggleInitCase s = s
 
 definition :: Parser Definition
 definition = do
   d <- def
-  case d of
-    TypeDef _ t -> void $ resolveTypeDescriptor t
-    _ -> return ()
-  s <- P.getState
-  case MapL.insertLookupWithKey (\_ -> const) (definitionIdentifier d) d s of
-    (Nothing, s') -> P.putState s'
-    _ -> fail $ "duplicate identifier: " ++ show (definitionIdentifier d)
+  addScope d
   return d
 
 specification :: Parser Specification
 specification = endSemi1 definition
 
-file :: Parser Specification
-file = PT.whiteSpace token *> specification <* P.eof
+file :: Parser (Specification, Scope)
+file = PT.whiteSpace token *> tupleM specification P.getState <* P.eof
 
-parseFile :: FilePath -> IO (Either P.ParseError Specification)
+parseFile :: FilePath -> IO (Either P.ParseError (Specification, Scope))
 parseFile f = P.runParser file baseScope f <$> BSLC.readFile f

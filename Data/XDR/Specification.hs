@@ -1,4 +1,4 @@
--- | XDR: External Data Representation specification
+-- | XDR specification, as per RFC4506
 
 module Data.XDR.Specification
   where
@@ -61,10 +61,15 @@ data Declaration = Declaration
 -- |'Declaration' or void
 type OptionalDeclaration = Maybe Declaration
 
+type EnumValues = [(Identifier, XDR.Int)]
+
 newtype EnumBody = EnumBody
-  { enumValues :: [(Identifier, XDR.Int)]
+  { enumValues :: EnumValues
   }
   deriving (Show)
+
+boolValues :: EnumValues
+boolValues = [("FALSE", 0), ("TRUE", 1)]
 
 newtype StructBody = StructBody
   { structMembers :: [Declaration] -- ^with voids elided
@@ -78,20 +83,15 @@ data UnionBody = UnionBody
   }
   deriving (Show)
 
-data Definition
-  = TypeDef
-    { definitionIdentifier :: !Identifier
-    , definitionType :: TypeDescriptor
-    }
-  | Constant
-    { definitionIdentifier :: !Identifier
-    , definitionConstant :: Integer
-    }
+data DefinitionBody
+  = TypeDef TypeDescriptor
+  | Constant Integer
+  deriving (Show)
+
+data Definition = Definition
+  { definitionIdentifier :: !Identifier
+  , definitionBody :: !DefinitionBody
+  }
   deriving (Show)
 
 type Specification = [Definition]
-
-baseSpecification :: Specification
-baseSpecification =
-  [ TypeDef "bool" $ TypeSingle $ TypeEnum $ EnumBody [("FALSE", 0), ("TRUE", 1)]
-  ]
