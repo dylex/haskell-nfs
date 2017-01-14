@@ -1,0 +1,6 @@
+Haskell tools and library for interacting with ONC RPC (aka Sun RPC) protocols.
+The eventual goal is a working NFS4 client.
+
+See also http://github.com/jthornber/xdrgen, which is rpcgen-replacement for
+other languages written in Haskell.  By contrast, this project targets full RPC
+support in Haskell (however the Haskell XDR generator could fit in that project).
