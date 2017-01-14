@@ -76,9 +76,16 @@ newtype StructBody = StructBody
   }
   deriving (Show)
 
+data UnionArm = UnionArm
+  { unionCase :: !Integer
+  , unionCaseLiteral :: String
+  , unionDeclaration :: OptionalDeclaration
+  }
+  deriving (Show)
+
 data UnionBody = UnionBody
   { unionDiscriminant :: !Declaration
-  , unionCases :: [(Integer, OptionalDeclaration)]
+  , unionCases :: [UnionArm]
   , unionDefault :: Maybe OptionalDeclaration
   }
   deriving (Show)

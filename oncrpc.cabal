@@ -33,3 +33,16 @@ library
     parsec
   default-language: Haskell2010
   ghc-options: -Wall
+
+executable hsxdrgen
+  main-is: hsxdrgen.hs
+  build-depends:
+    base >=4.8 && <5,
+    bytestring,
+    cereal >=0.5.4,
+    containers,
+    haskell-src-exts >= 1.18,
+    parsec,
+    oncrpc
+  default-language: Haskell2010
+  ghc-options: -Wall

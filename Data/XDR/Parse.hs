@@ -58,14 +58,57 @@ addScope (Definition i b) = do
     (Nothing, s') -> P.putState s'
     _ -> fail $ "duplicate identifier: " ++ show i
 
-token :: PT.GenTokenParser Stream a Identity
+checkInt :: (Monad m, Integral n) => Integer -> m n
+checkInt n
+  | n == toInteger n' = return n'
+  | otherwise = fail "invalid constant"
+  where n' = fromInteger n
+
+data Value
+  = ValueIdentifier !Identifier
+  | ValueConstant !Integer
+  deriving (Show)
+
+resolveValue :: Integral n => Value -> Parser n
+resolveValue (ValueConstant n) = checkInt n
+resolveValue (ValueIdentifier v) = do
+  s <- P.getState
+  case Map.lookup v s of
+    Just (Binding _ (Constant n)) -> checkInt n
+    _ -> fail $ "undefined constant: " ++ show v
+
+-- |Expand 'TypeSingle' 'TypeIdentifier'
+resolveTypeDescriptor :: TypeDescriptor -> Parser TypeDescriptor
+resolveTypeDescriptor (TypeSingle (TypeIdentifier i)) = do
+  s <- P.getState
+  case Map.lookup i s of
+    Just (Binding _ (TypeDef t)) -> resolveTypeDescriptor t
+    _ -> fail $ "undefined type: " ++ show i
+resolveTypeDescriptor d = return d
+
+def :: Parser Definition
+def = constantDef <|> typeDef where
+  constantDef = Definition
+    <$> (reserved "const" *> identifier)
+    <*> (PT.symbol token "=" *> (Constant <$> constant))
+  typeDef =
+        reserved "typedef" *> (declDef <$> declaration)
+    <|> Definition <$> (reserved "enum"   *> identifier) <*> (TypeDef . TypeSingle . TypeEnum   <$> enumBody)
+    <|> Definition <$> (reserved "struct" *> identifier) <*> (TypeDef . TypeSingle . TypeStruct <$> structBody)
+    <|> Definition <$> (reserved "union"  *> identifier) <*> (TypeDef . TypeSingle . TypeUnion  <$> unionBody)
+  declDef (Declaration i t) = Definition i $ TypeDef t
+
+literalLetter :: Parser Char
+literalLetter = P.alphaNum <|> P.char '_'
+
+token :: PT.GenTokenParser Stream Scope Identity
 token = PT.makeTokenParser PT.LanguageDef
   { PT.commentStart    = "/*"
   , PT.commentEnd      = "*/"
   , PT.commentLine     = "%"
   , PT.nestedComments  = False
   , PT.identStart      = P.letter
-  , PT.identLetter     = P.alphaNum <|> P.char '_'
+  , PT.identLetter     = literalLetter
   , PT.opStart         = error "token op"
   , PT.opLetter        = error "token op"
   , PT.reservedNames   =
@@ -145,17 +188,9 @@ constant = (PT.lexeme token $
   number base digit = foldl (\x d -> base*x + toInteger (digitToInt d)) 0 <$> P.many1 digit
 
 value :: Integral n => Parser n
-value = fi =<< constant <|> do
-  v <- identifier
-  s <- P.getState
-  case Map.lookup v s of
-    Just (Binding _ (Constant n)) -> return n
-    _ -> fail $ "undefined constant: " ++ show v
-  where
-  fi n
-    | n == toInteger n' = return n'
-    | otherwise = fail "invalid constant"
-    where n' = fromInteger n
+value = resolveValue =<<
+      ValueConstant <$> constant
+  <|> ValueIdentifier <$> identifier
 
 typeSpecifier :: Parser TypeSpecifier
 typeSpecifier = P.choice
@@ -211,37 +246,16 @@ unionBody = do
     _ -> fail "invalid discriminant declaration"
   PT.braces token $ do
     l <- endSemi1 (tupleM
-      (P.many1 $ reserved "case" *> p <* PT.colon token)
+      (P.many1 $ reserved "case" *> tupleM (P.lookAhead $ P.many1 literalLetter) p <* PT.colon token)
       voidableDeclaration)
     _ <- checkUnique "union member" $ mapMaybe (fmap declarationIdentifier . snd) l
-    _ <- checkUnique "union case" $ fst =<< l
+    _ <- checkUnique "union case" $ map snd . fst =<< l
     f <- P.optionMaybe $ reserved "default" *> PT.colon token *> voidableDeclaration <* PT.semi token
-    return $ UnionBody d [ (c, b) | (cs, b) <- l, c <- cs ] f
+    return $ UnionBody d [ UnionArm c s b | (cs, b) <- l, (s, c) <- cs ] f
   where
   valid l n
     | any ((n ==) . snd) l = return $ toInteger n
     | otherwise = fail "invalid enum value"
-
--- |Expand 'TypeSingle' 'TypeIdentifier'
-resolveTypeDescriptor :: TypeDescriptor -> Parser TypeDescriptor
-resolveTypeDescriptor (TypeSingle (TypeIdentifier i)) = do
-  s <- P.getState
-  case Map.lookup i s of
-    Just (Binding _ (TypeDef t)) -> resolveTypeDescriptor t
-    _ -> fail $ "undefined type: " ++ show i
-resolveTypeDescriptor d = return d
-
-def :: Parser Definition
-def = constantDef <|> typeDef where
-  constantDef = Definition
-    <$> (reserved "const" *> identifier)
-    <*> (PT.symbol token "=" *> (Constant <$> constant))
-  typeDef =
-        reserved "typedef" *> (declDef <$> declaration)
-    <|> Definition <$> (reserved "enum"   *> identifier) <*> (TypeDef . TypeSingle . TypeEnum   <$> enumBody)
-    <|> Definition <$> (reserved "struct" *> identifier) <*> (TypeDef . TypeSingle . TypeStruct <$> structBody)
-    <|> Definition <$> (reserved "union"  *> identifier) <*> (TypeDef . TypeSingle . TypeUnion  <$> unionBody)
-  declDef (Declaration i t) = Definition i $ TypeDef t
 
 toggleInitCase :: String -> String
 toggleInitCase (c:s)
