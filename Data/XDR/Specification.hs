@@ -4,6 +4,7 @@ module Data.XDR.Specification
   where
 
 import qualified Data.XDR.Types as XDR
+import qualified Network.ONCRPC.Types as RPC
 
 newtype Identifier = Identifier{ identifierString :: String }
   deriving (Show, Eq, Ord)
@@ -84,9 +85,26 @@ data UnionBody = UnionBody
   , unionDefault :: Maybe OptionalDeclaration
   }
 
+data Procedure = Procedure
+  { procedureRes :: Maybe TypeSpecifier
+  , procedureIdentifier :: !Identifier
+  , procedureArgs :: Maybe TypeSpecifier
+  , procedureNumber :: !RPC.ProcNum
+  }
+
+data Version = Version
+  { versionIdentifier :: !Identifier
+  , versionProcedures :: [Procedure]
+  , versionNumber :: !RPC.VersNum
+  }
+
 data DefinitionBody
   = TypeDef TypeDescriptor
   | Constant Integer
+  | Program
+    { programVersions :: [Version]
+    , programNumber :: !RPC.ProgNum
+    }
 
 data Definition = Definition
   { definitionIdentifier :: !Identifier

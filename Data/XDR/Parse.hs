@@ -91,18 +91,6 @@ resolveTypeDescriptor (TypeSingle (TypeIdentifier i)) = do
     _ -> fail $ "undefined type: " ++ show i
 resolveTypeDescriptor d = return d
 
-def :: Parser Definition
-def = constantDef <|> typeDef where
-  constantDef = Definition
-    <$> (reserved "const" *> identifier)
-    <*> (PT.symbol token "=" *> (Constant <$> constant))
-  typeDef =
-        reserved "typedef" *> (declDef <$> declaration)
-    <|> Definition <$> (reserved "enum"   *> identifier) <*> (TypeDef . TypeSingle . TypeEnum   <$> enumBody)
-    <|> Definition <$> (reserved "struct" *> identifier) <*> (TypeDef . TypeSingle . TypeStruct <$> structBody)
-    <|> Definition <$> (reserved "union"  *> identifier) <*> (TypeDef . TypeSingle . TypeUnion  <$> unionBody)
-  declDef (Declaration i t) = Definition i $ TypeDef t
-
 literalLetter :: Parser Char
 literalLetter = P.alphaNum <|> P.char '_'
 
@@ -135,6 +123,9 @@ token = PT.makeTokenParser PT.LanguageDef
     , "union"
     , "unsigned"
     , "void"
+
+    , "program"
+    , "version"
     ]
   , PT.reservedOpNames = []
   , PT.caseSensitive   = True
@@ -179,8 +170,8 @@ declaration =
       <$> (reserved "string" *> identifier)
       <*> (TypeString <$> variableArrayLength)
 
-voidableDeclaration :: Parser OptionalDeclaration
-voidableDeclaration =
+optionalDeclaration :: Parser OptionalDeclaration
+optionalDeclaration =
       Just <$> declaration
   <|> Nothing <$ reserved "void"
 
@@ -234,7 +225,7 @@ enumBody = do
 
 structBody :: Parser StructBody
 structBody = do
-  l <- PT.braces token $ catMaybes <$> endSemi1 voidableDeclaration
+  l <- PT.braces token $ catMaybes <$> endSemi1 optionalDeclaration
   _ <- checkUnique "struct member" $ declarationIdentifier <$> l
   return $ StructBody l
 
@@ -252,15 +243,50 @@ unionBody = do
   PT.braces token $ do
     l <- endSemi1 (tupleM
       (P.many1 $ reserved "case" *> tupleM (P.lookAhead $ P.many1 literalLetter) p <* PT.colon token)
-      voidableDeclaration)
+      optionalDeclaration)
     _ <- checkUnique "union member" $ mapMaybe (fmap declarationIdentifier . snd) l
     _ <- checkUnique "union case" $ map snd . fst =<< l
-    f <- P.optionMaybe $ reserved "default" *> PT.colon token *> voidableDeclaration <* PT.semi token
+    f <- P.optionMaybe $ reserved "default" *> PT.colon token *> optionalDeclaration <* PT.semi token
     return $ UnionBody d [ UnionArm c s b | (cs, b) <- l, (s, c) <- cs ] f
   where
   valid l n
     | any ((n ==) . snd) l = return n
     | otherwise = fail "invalid enum value"
+
+procedure :: Parser Procedure
+procedure = Procedure
+  <$> optionalType
+  <*> identifier
+  <*> PT.parens token optionalType
+  <*> (PT.symbol token "=" *> value)
+  where 
+  optionalType :: Parser (Maybe TypeSpecifier)
+  optionalType =
+        Just <$> typeSpecifier
+    <|> Nothing <$ reserved "void"
+
+programVersion :: Parser Version
+programVersion = Version
+  <$> (reserved "version" *> identifier)
+  <*> PT.braces token (endSemi1 procedure)
+  <*> (PT.symbol token "=" *> value)
+
+def :: Parser Definition
+def = constantDef <|> typeDef <|> programDef where
+  constantDef = Definition
+    <$> (reserved "const" *> identifier)
+    <*> (PT.symbol token "=" *> (Constant <$> constant))
+  typeDef =
+        reserved "typedef" *> (declDef <$> declaration)
+    <|> Definition <$> (reserved "enum"   *> identifier) <*> (TypeDef . TypeSingle . TypeEnum   <$> enumBody)
+    <|> Definition <$> (reserved "struct" *> identifier) <*> (TypeDef . TypeSingle . TypeStruct <$> structBody)
+    <|> Definition <$> (reserved "union"  *> identifier) <*> (TypeDef . TypeSingle . TypeUnion  <$> unionBody)
+  declDef (Declaration i t) = Definition i $ TypeDef t
+  programDef = Definition
+    <$> (reserved "program" *> identifier)
+    <*> (Program
+      <$> PT.braces token (endSemi1 programVersion)
+      <*> (PT.symbol token "=" *> value))
 
 definition :: Parser Definition
 definition = do

@@ -1,3 +1,5 @@
+-- |XDR Serialization
+
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -28,7 +30,7 @@ import qualified Data.XDR.Specification as XDR
 import           GHC.TypeLits (KnownNat, natVal)
 
 class XDR a where
-  -- |Argument value is ignored
+  -- |XDR identifier/type descriptor; argument value is ignored
   xdrType :: a -> String
   xdrPut :: a -> B.Put
   xdrGet :: B.Get a

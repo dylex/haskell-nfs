@@ -24,6 +24,7 @@ library
     Data.XDR.Parse
     Data.XDR.Serial
     Data.XDR.Generate
+    Network.ONCRPC.Types
   build-depends:       
     base >=4.8 && <5,
     bytestring,

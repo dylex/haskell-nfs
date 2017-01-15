@@ -150,7 +150,7 @@ definition scope (Definition n (TypeDef (TypeSingle (TypeStruct (StructBody dl))
   [ dataDecl hn [HS.RecDecl () (HS.name hn) hdl]
   , instDecl "XDR" hn
     [ typeDef n
-    , HS.simpleFun (HS.name "xdrPut") (HS.name "x") $ putFields (HS.var $ HS.name "x") hdl
+    , HS.simpleFun (HS.name "xdrPut") (HS.name "_x") $ putFields (HS.var $ HS.name "_x") hdl
     , HS.nameBind (HS.name "xdrGet") $ getFields (pureCon hn) hdl
     ]
   ] where
@@ -219,6 +219,7 @@ definition scope (Definition n (Constant v)) =
   , HS.nameBind (HS.name hn) (HS.intE v)
   ] where
   hn = identifier scope toLower n
+definition _ (Definition _ (Program _ _)) = [] -- TODO
 
 generate :: XDR.Scope -> String -> Specification -> HS.Module ()
 generate s n l = HS.Module ()
