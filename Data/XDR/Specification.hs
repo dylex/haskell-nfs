@@ -5,17 +5,18 @@ module Data.XDR.Specification
 
 import qualified Data.XDR.Types as XDR
 
-type Identifier = String
+newtype Identifier = Identifier{ identifierString :: String }
+  deriving (Show, Eq, Ord)
+
 type Length = XDR.UnsignedInt
 
 maxLength :: Length
 maxLength = maxBound
 
 data ArrayLength
-  = FixedArray    { arrayLength :: !Length }
-  | VariableArray { arrayLength :: !Length -- ^defaulted to maxLength
+  = FixedLength    { arrayLength :: !Length }
+  | VariableLength { arrayLength :: !Length -- ^defaulted to maxLength
     }
-  deriving (Show)
 
 data TypeDescriptor
   = TypeSingle
@@ -34,7 +35,6 @@ data TypeDescriptor
   | TypeOptional
     { descriptorType :: !TypeSpecifier
     }
-  deriving (Show)
 
 data TypeSpecifier
   = TypeInt
@@ -49,14 +49,12 @@ data TypeSpecifier
   | TypeStruct !StructBody
   | TypeUnion !UnionBody
   | TypeIdentifier !Identifier
-  deriving (Show)
 
 -- |Non-void declaration
 data Declaration = Declaration
   { declarationIdentifier :: !Identifier
   , declarationType :: TypeDescriptor
   }
-  deriving (Show)
 
 -- |'Declaration' or void
 type OptionalDeclaration = Maybe Declaration
@@ -66,39 +64,33 @@ type EnumValues = [(Identifier, XDR.Int)]
 newtype EnumBody = EnumBody
   { enumValues :: EnumValues
   }
-  deriving (Show)
 
 boolValues :: EnumValues
-boolValues = [("FALSE", 0), ("TRUE", 1)]
+boolValues = [(Identifier "FALSE", 0), (Identifier "TRUE", 1)]
 
 newtype StructBody = StructBody
   { structMembers :: [Declaration] -- ^with voids elided
   }
-  deriving (Show)
 
 data UnionArm = UnionArm
   { unionCase :: !Integer
   , unionCaseLiteral :: String -- ^The literal string found after "case", for labeling
   , unionDeclaration :: OptionalDeclaration
   }
-  deriving (Show)
 
 data UnionBody = UnionBody
   { unionDiscriminant :: !Declaration
-  , unionCases :: [UnionArm]
+  , unionArms :: [UnionArm]
   , unionDefault :: Maybe OptionalDeclaration
   }
-  deriving (Show)
 
 data DefinitionBody
   = TypeDef TypeDescriptor
   | Constant Integer
-  deriving (Show)
 
 data Definition = Definition
   { definitionIdentifier :: !Identifier
   , definitionBody :: !DefinitionBody
   }
-  deriving (Show)
 
 type Specification = [Definition]

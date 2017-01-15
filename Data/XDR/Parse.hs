@@ -8,7 +8,7 @@ module Data.XDR.Parse
   ) where
 
 import           Control.Applicative ((<|>))
-import           Control.Arrow (second)
+import           Control.Arrow ((***), second)
 import           Control.Monad (void, liftM2)
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import           Data.Char (digitToInt, isLower, isUpper, toLower, toUpper)
@@ -26,7 +26,6 @@ data Binding = Binding
   { bindingInitCaseConflict :: !Bool -- ^Same name as another identifier modulo first character case
   , bindingDefinition :: !DefinitionBody
   }
-  deriving (Show)
 
 type Scope = Map.Map Identifier Binding
 type Stream = BSLC.ByteString
@@ -37,8 +36,8 @@ tupleM = liftM2 (,)
 
 baseScope :: Scope
 baseScope = Map.fromList $
-  ("bool",        Binding False $ TypeDef $ TypeSingle $ TypeEnum $ EnumBody $ boolValues)
-  : map (second $ Binding False . TypeDef . TypeSingle)
+  (Identifier "bool",   Binding False $ TypeDef $ TypeSingle $ TypeEnum $ EnumBody $ boolValues)
+  : map (Identifier *** Binding False . TypeDef . TypeSingle)
     [ ("int",       TypeInt)
     , ("unsigned",  TypeUnsignedInt)
     , ("hyper",     TypeHyper)
@@ -48,13 +47,19 @@ baseScope = Map.fromList $
     ]
   ++ map (second $ Binding False . Constant . toInteger) boolValues
 
+toggleCase :: Identifier -> Identifier
+toggleCase (Identifier (c:s))
+  | isUpper c = Identifier $ toLower c:s
+  | isLower c = Identifier $ toUpper c:s
+toggleCase s = s
+
 addScope :: Definition -> Parser ()
 addScope (Definition i b) = do
   case b of
     TypeDef t -> void $ resolveTypeDescriptor t
     _ -> return ()
   s <- P.getState
-  case Map.insertLookupWithKey (\_ -> const) i (Binding (Map.member (toggleInitCase i) s) b) s of
+  case Map.insertLookupWithKey (\_ -> const) i (Binding (Map.member (toggleCase i) s) b) s of
     (Nothing, s') -> P.putState s'
     _ -> fail $ "duplicate identifier: " ++ show i
 
@@ -139,16 +144,16 @@ reserved :: String -> Parser ()
 reserved = PT.reserved token
 
 identifier :: Parser Identifier
-identifier = PT.identifier token
+identifier = Identifier <$> PT.identifier token
 
 endSemi1 :: Parser a -> Parser [a]
 endSemi1 p = p `P.endBy1` PT.semi token
 
 arrayLength, variableArrayLength :: Parser ArrayLength
 variableArrayLength =
-  VariableArray <$> PT.angles token (P.option maxLength value)
+  VariableLength <$> PT.angles token (P.option maxLength value)
 arrayLength =
-  FixedArray    <$> PT.brackets token value
+  FixedLength    <$> PT.brackets token value
   <|> variableArrayLength
 
 declaration :: Parser Declaration
@@ -256,12 +261,6 @@ unionBody = do
   valid l n
     | any ((n ==) . snd) l = return $ toInteger n
     | otherwise = fail "invalid enum value"
-
-toggleInitCase :: String -> String
-toggleInitCase (c:s)
-  | isUpper c = toLower c:s
-  | isLower c = toUpper c:s
-toggleInitCase s = s
 
 definition :: Parser Definition
 definition = do
