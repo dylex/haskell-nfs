@@ -114,8 +114,8 @@ token = PT.makeTokenParser PT.LanguageDef
   , PT.nestedComments  = False
   , PT.identStart      = P.letter
   , PT.identLetter     = literalLetter
-  , PT.opStart         = error "token op"
-  , PT.opLetter        = error "token op"
+  , PT.opStart         = fail "token op"
+  , PT.opLetter        = fail "token op"
   , PT.reservedNames   =
     [ "bool"
     , "case"
@@ -244,8 +244,8 @@ unionBody = do
   d <- PT.parens token declaration
   r <- resolveTypeDescriptor $ declarationType d
   p <- case r of
-    TypeSingle TypeInt -> return $ toInteger <$> (value :: Parser XDR.Int)
-    TypeSingle TypeUnsignedInt -> return $ toInteger <$> (value :: Parser XDR.UnsignedInt)
+    TypeSingle TypeInt -> return value
+    TypeSingle TypeUnsignedInt -> return $ fromIntegral <$> (value :: Parser XDR.UnsignedInt)
     TypeSingle TypeBool -> return $ valid boolValues =<< value
     TypeSingle (TypeEnum (EnumBody v)) -> return $ valid v =<< value
     _ -> fail "invalid discriminant declaration"
@@ -259,7 +259,7 @@ unionBody = do
     return $ UnionBody d [ UnionArm c s b | (cs, b) <- l, (s, c) <- cs ] f
   where
   valid l n
-    | any ((n ==) . snd) l = return $ toInteger n
+    | any ((n ==) . snd) l = return n
     | otherwise = fail "invalid enum value"
 
 definition :: Parser Definition

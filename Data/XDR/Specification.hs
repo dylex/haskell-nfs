@@ -73,7 +73,7 @@ newtype StructBody = StructBody
   }
 
 data UnionArm = UnionArm
-  { unionCase :: !Integer
+  { unionCase :: !XDR.Int
   , unionCaseLiteral :: String -- ^The literal string found after "case", for labeling
   , unionDeclaration :: OptionalDeclaration
   }

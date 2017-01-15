@@ -5,8 +5,8 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 module Data.XDR.Serial
   ( XDR(..)
-  , xdrIdentifier
   , XDREnum(..)
+  , toXDREnum'
   , xdrToEnum
   , xdrPutEnum
   , xdrGetEnum
@@ -18,7 +18,8 @@ module Data.XDR.Serial
 
 import           Control.Monad (guard, unless, replicateM)
 import qualified Data.ByteString as BS
-import           Data.Maybe (fromMaybe, fromJust)
+import           Data.Functor.Identity (runIdentity)
+import           Data.Maybe (fromJust, isJust)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Serialize as B
 import qualified Data.Sext as Sext
@@ -28,90 +29,94 @@ import           GHC.TypeLits (KnownNat, natVal)
 
 class XDR a where
   -- |Argument value is ignored
-  xdrSpecification :: a -> XDR.Declaration
+  xdrType :: a -> String
   xdrPut :: a -> B.Put
   xdrGet :: B.Get a
 
-xdrIdentifier :: XDR a => a -> String
-xdrIdentifier = XDR.identifierString . XDR.declarationIdentifier . xdrSpecification
-
 instance XDR XDR.Int where
-  xdrSpecification _ = XDR.Declaration (XDR.Identifier "int")            (XDR.TypeSingle XDR.TypeInt)
+  xdrType _ = "int"
   xdrPut = B.putInt32be
   xdrGet = B.getInt32be
 instance XDR XDR.UnsignedInt where
-  xdrSpecification _ = XDR.Declaration (XDR.Identifier "unsigned int")   (XDR.TypeSingle XDR.TypeUnsignedInt)
+  xdrType _ = "unsigned int"
   xdrPut = B.putWord32be
   xdrGet = B.getWord32be
 instance XDR XDR.Hyper where
-  xdrSpecification _ = XDR.Declaration (XDR.Identifier "hyper")          (XDR.TypeSingle XDR.TypeHyper)
+  xdrType _ = "hyper"
   xdrPut = B.putInt64be
   xdrGet = B.getInt64be
 instance XDR XDR.UnsignedHyper where
-  xdrSpecification _ = XDR.Declaration (XDR.Identifier "unsigned hyper") (XDR.TypeSingle XDR.TypeUnsignedHyper)
+  xdrType _ = "unsigned hyper"
   xdrPut = B.putWord64be
   xdrGet = B.getWord64be
 instance XDR XDR.Float where
-  xdrSpecification _ = XDR.Declaration (XDR.Identifier "float")          (XDR.TypeSingle XDR.TypeFloat)
+  xdrType _ = "float"
   xdrPut = B.putFloat32be
   xdrGet = B.getFloat32be
 instance XDR XDR.Double where
-  xdrSpecification _ = XDR.Declaration (XDR.Identifier "double")         (XDR.TypeSingle XDR.TypeDouble)
+  xdrType _ = "double"
   xdrPut = B.putFloat64be
   xdrGet = B.getFloat64be
 instance XDR XDR.Bool where
-  xdrSpecification _ = XDR.Declaration (XDR.Identifier "bool")           (XDR.TypeSingle XDR.TypeBool)
+  xdrType _ = "bool"
   xdrPut = xdrPutEnum
   xdrGet = xdrGetEnum
 
 class (XDR a, Enum a) => XDREnum a where
   fromXDREnum :: a -> XDR.Int
   fromXDREnum = fromIntegral . fromEnum
-  toXDREnum :: XDR.Int -> Maybe a
+  toXDREnum :: Monad m => XDR.Int -> m a
 
-instance XDREnum XDR.Bool where
-  fromXDREnum False = 0
-  fromXDREnum True = 1
-  toXDREnum 0 = Just False
-  toXDREnum 1 = Just True
-  toXDREnum _ = Nothing
+instance XDREnum XDR.Int where
+  fromXDREnum = id
+  toXDREnum = return
+
+instance XDREnum XDR.UnsignedInt where
+  fromXDREnum = fromIntegral
+  toXDREnum = return . fromIntegral
+
+toXDREnum' :: XDREnum a => XDR.Int -> a
+toXDREnum' = runIdentity . toXDREnum
 
 xdrToEnum :: XDREnum a => Int -> a
-xdrToEnum i = fromMaybe (error $ "invalid " ++ xdrIdentifier (fromJust x)) x
-  where x = toXDREnum (fromIntegral i)
+xdrToEnum = toXDREnum' . fromIntegral
 
 xdrPutEnum :: XDREnum a => a -> B.Put
 xdrPutEnum = B.put . fromXDREnum
 
 xdrGetEnum :: XDREnum a => B.Get a
-xdrGetEnum = do
-  i <- toXDREnum <$> B.get
-  maybe (fail $ "invalid " ++ xdrIdentifier (fromJust i)) return i
+xdrGetEnum = toXDREnum =<< B.get
 
-class (XDR d, XDR a) => XDRUnion d a | a -> d where
-  xdrUnionDiscriminant :: a -> d
+instance XDREnum XDR.Bool where
+  fromXDREnum False = 0
+  fromXDREnum True = 1
+  toXDREnum 0 = return False
+  toXDREnum 1 = return True
+  toXDREnum _ = fail "invalid bool"
+
+class XDR a => XDRUnion a where
+  xdrDiscriminant :: a -> XDR.Int
   xdrPutUnionArm :: a -> B.Put
-  xdrGetUnionArm :: d -> B.Get a
+  xdrGetUnionArm :: XDR.Int -> B.Get a
 
-xdrPutUnion :: XDRUnion d a => a -> B.Put
-xdrPutUnion a = xdrPut (xdrUnionDiscriminant a) >> xdrPutUnionArm a
+xdrPutUnion :: XDRUnion a => a -> B.Put
+xdrPutUnion a = xdrPut (xdrDiscriminant a) >> xdrPutUnionArm a
 
-xdrGetUnion :: XDRUnion d a => B.Get a
+xdrGetUnion :: XDRUnion a => B.Get a
 xdrGetUnion = xdrGet >>= xdrGetUnionArm
 
 instance XDR a => XDR (XDR.Optional a) where
-  xdrSpecification a = XDR.Declaration (XDR.Identifier $ '*':XDR.identifierString i) (XDR.TypeOptional (XDR.TypeIdentifier i)) where
-    XDR.Declaration i _ = xdrSpecification (fromJust a)
+  xdrType = ('*':) . xdrType . fromJust
   xdrPut = xdrPutUnion
   xdrGet = xdrGetUnion
 
-instance XDR a => XDRUnion XDR.Bool (XDR.Optional a) where
-  xdrUnionDiscriminant Nothing = False
-  xdrUnionDiscriminant (Just _) = True
+instance XDR a => XDRUnion (XDR.Optional a) where
+  xdrDiscriminant = fromXDREnum . isJust
   xdrPutUnionArm Nothing = return ()
   xdrPutUnionArm (Just a) = xdrPut a
-  xdrGetUnionArm False = return Nothing
-  xdrGetUnionArm True = Just <$> xdrGet
+  xdrGetUnionArm 0 = return Nothing
+  xdrGetUnionArm 1 = Just <$> xdrGet
+  xdrGetUnionArm _ = fail $ "xdrGetUnion: invalid discriminant for " ++ xdrType (undefined :: XDR.Optional a)
 
 bsLength :: BS.ByteString -> XDR.Length
 bsLength = fromIntegral . BS.length
@@ -163,15 +168,27 @@ xdrGetByteStringLen m = do
   guard $ l <= m
   xdrGetByteString l
 
+fixedLength :: KnownNat n => p n -> String -> String
+fixedLength p = (++ ('[' : show (natVal p) ++ "]"))
+
+variableLength :: KnownNat n => p n -> String -> String
+variableLength p
+  | n == XDR.maxLength = (++ "<>")
+  | otherwise = (++ ('<' : show n ++ ">"))
+  where n = fromIntegral $ natVal p
+
 instance (KnownNat n, XDR a) => XDR (XDR.FixedArray n a) where
+  xdrType = (fixedLength (Proxy :: Proxy n)) . xdrType . head . Sext.unwrap
   xdrPut a = do
     -- unless (length a' == fromInteger (natVal (Proxy :: Proxy n))) $ fail "xdrPutFixedArray: incorrect length"
     mapM_ xdrPut a'
-    where a' = Sext.unwrap a
+    where
+    a' = Sext.unwrap a
   xdrGet = Sext.unsafeCreate <$>
     replicateM (fromInteger (natVal (Proxy :: Proxy n))) xdrGet
 
 instance (KnownNat n, XDR a) => XDR (XDR.Array n a) where
+  xdrType (XDR.Array l) = variableLength (Proxy :: Proxy n) $ xdrType $ head l
   xdrPut (XDR.Array a) = do
     xdrPut (l :: XDR.Length)
     mapM_ xdrPut a'
@@ -187,18 +204,21 @@ instance (KnownNat n, XDR a) => XDR (XDR.Array n a) where
     m = fromInteger $ natVal (Proxy :: Proxy n)
 
 instance KnownNat n => XDR (XDR.FixedOpaque n) where
+  xdrType _ = fixedLength (Proxy :: Proxy n) "opaque"
   xdrPut o =
     xdrPutByteString (fromInteger $ natVal (Proxy :: Proxy n)) $ Sext.unwrap o
   xdrGet = Sext.unsafeCreate <$>
     xdrGetByteString (fromInteger $ natVal (Proxy :: Proxy n))
 
 instance KnownNat n => XDR (XDR.Opaque n) where
+  xdrType o = variableLength o "opaque"
   xdrPut o@(XDR.Opaque b) =
     xdrPutByteString (fromInteger $ natVal o) b
   xdrGet = XDR.Opaque <$>
     xdrGetByteStringLen (fromInteger $ natVal (Proxy :: Proxy n))
 
 instance KnownNat n => XDR (XDR.String n) where
+  xdrType o = variableLength o "string"
   xdrPut s@(XDR.String b) =
     xdrPutByteStringLen (fromInteger $ natVal s) b
   xdrGet = XDR.String <$>
