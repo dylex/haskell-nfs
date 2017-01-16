@@ -70,12 +70,14 @@ enum auth_stat {
 
 struct rpc_msg {
 	unsigned int xid;
-	union switch (msg_type mtype) {
-		case CALL:
-			call_body cbody;
-		case REPLY:
-			reply_body rbody;
-	} body;
+	union rpc_msg_body body;
+};
+
+union rpc_msg_body switch (msg_type mtype) {
+	case CALL:
+		call_body cbody;
+	case REPLY:
+		reply_body rbody;
 };
 
 struct call_body {
@@ -97,24 +99,26 @@ union reply_body switch (reply_stat stat) {
 
 struct accepted_reply {
 	opaque_auth verf;
-	union switch (accept_stat stat) {
-		case SUCCESS:
-			opaque results[0];
-			/*
-			 * procedure-specific results start here
-			 */
-		case PROG_MISMATCH:
-			struct {
-				unsigned int low;
-				unsigned int high;
-			} mismatch_info;
-		default:
-			/*
-			 * Void.  Cases include PROG_UNAVAIL, PROC_UNAVAIL,
-			 * GARBAGE_ARGS, and SYSTEM_ERR.
-			 */
-			void;
-	} reply_data;
+	union accepted_reply_data reply_data;
+};
+
+union accepted_reply_data switch (accept_stat stat) {
+	case SUCCESS:
+		opaque results[0];
+		/*
+		 * procedure-specific results start here
+		 */
+	case PROG_MISMATCH:
+		struct {
+			unsigned int low;
+			unsigned int high;
+		} mismatch_info;
+	default:
+		/*
+		 * Void.  Cases include PROG_UNAVAIL, PROC_UNAVAIL,
+		 * GARBAGE_ARGS, and SYSTEM_ERR.
+		 */
+		void;
 };
 
 union rejected_reply switch (reject_stat stat) {
@@ -124,7 +128,7 @@ union rejected_reply switch (reject_stat stat) {
 			unsigned int high;
 		} mismatch_info;
 	case AUTH_ERROR:
-		auth_stat stat;
+		auth_stat auth_stat; /* renamed to avoid conflict with discriminator */
 };
 
 struct authsys_parms {
