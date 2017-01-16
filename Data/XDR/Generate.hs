@@ -92,12 +92,14 @@ descrType scope (TypeOptional t) = HS.TyApp ()      (HS.TyCon () $ xdrName "Opti
 declType' :: Scope -> Declaration -> HS.Type ()
 declType' scope (Declaration n t) = fromMaybe (error $ "nested data structures are not supported: " ++ show n) $ descrType scope t
 
-declaration :: Scope -> String -> Declaration -> HS.FieldDecl ()
+declaration :: Scope -> String -> Declaration -> [HS.FieldDecl ()]
+declaration scope n (Declaration i (TypeSingle (TypeStruct (StructBody dl)))) =
+  concatMap (declaration scope $ memberIdentifier id n i) dl
 declaration scope n d@(Declaration i _) =
-  HS.FieldDecl () [HS.name $ memberIdentifier toLower n i] $ declType' scope d
+  [HS.FieldDecl () [HS.name $ memberIdentifier toLower n i] $ declType' scope d]
 
 optionalDeclaration :: Scope -> String -> OptionalDeclaration -> [HS.FieldDecl ()]
-optionalDeclaration scope n = maybeToList . fmap (declaration scope n)
+optionalDeclaration scope = foldMap . declaration scope
 
 typeDef :: Identifier -> HS.Decl ()
 typeDef = HS.simpleFun (HS.name "xdrType") (HS.name "_") . HS.strE . identifierString
@@ -155,7 +157,7 @@ definition scope (Definition n (TypeDef (TypeSingle (TypeStruct (StructBody dl))
     ]
   ] where
   hn = identifier scope toUpper n
-  hdl = map (declaration scope hn) dl
+  hdl = concatMap (declaration scope hn) dl
 definition scope (Definition n (TypeDef (TypeSingle (TypeUnion (UnionBody d al o))))) =
   [ dataDecl hn $ map (\((_,l),b) ->
       HS.RecDecl () (HS.name l) b) hal

@@ -1,6 +1,6 @@
 Haskell tools and library for interacting with ONC RPC (aka Sun RPC) protocols.
-The eventual goal is a working NFS4 client, so TCP and efficient large data
-handling will be prioritized over UDP and portmaping.
+The eventual goal is a working NFS4 client, so TCP clients and efficient large
+data handling will be prioritized over servers, UDP, and portmaping.
 
 See also http://github.com/jthornber/xdrgen, which is a rpcgen replacement for
 other languages, written in Haskell.  By contrast, this project targets full RPC
