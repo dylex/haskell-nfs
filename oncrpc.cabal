@@ -28,6 +28,7 @@ library
     Data.XDR.Serial
     Data.XDR.Generate
     Network.ONCRPC.Types
+    Network.ONCRPC.Prot
   build-depends:       
     base >=4.8 && <5,
     bytestring,
