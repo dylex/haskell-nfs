@@ -1,4 +1,4 @@
--- | XDR Parser for .x files, as per RFC4506
+-- | XDR Parser for .x files, as per RFC4506 and RPC extensions from RFC5531
 
 {-# LANGUAGE TupleSections #-}
 module Data.XDR.Parse
@@ -257,7 +257,7 @@ procedure :: Parser Procedure
 procedure = Procedure
   <$> optionalType
   <*> identifier
-  <*> PT.parens token optionalType
+  <*> PT.parens token (catMaybes <$> PT.commaSep1 token optionalType)
   <*> (PT.symbol token "=" *> value)
   where 
   optionalType :: Parser (Maybe TypeSpecifier)

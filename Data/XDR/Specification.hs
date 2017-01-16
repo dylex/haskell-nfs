@@ -1,4 +1,4 @@
--- | XDR specification, as per RFC4506
+-- | XDR specification, as per RFC4506 and RPC extensions from RFC5531
 
 module Data.XDR.Specification
   where
@@ -88,7 +88,7 @@ data UnionBody = UnionBody
 data Procedure = Procedure
   { procedureRes :: Maybe TypeSpecifier
   , procedureIdentifier :: !Identifier
-  , procedureArgs :: Maybe TypeSpecifier
+  , procedureArgs :: [TypeSpecifier]
   , procedureNumber :: !RPC.ProcNum
   }
 
