@@ -8,8 +8,7 @@
 module Data.XDR.Serial
   ( XDR(..)
   , XDREnum(..)
-  , toXDREnum'
-  , xdrToEnum
+  , xdrToEnum'
   , xdrPutEnum
   , xdrGetEnum
   , XDRUnion(..)
@@ -29,8 +28,9 @@ import qualified Data.XDR.Types as XDR
 import qualified Data.XDR.Specification as XDR
 import           GHC.TypeLits (KnownNat, natVal)
 
+-- |An XDR type that can be (de)serialized.
 class XDR a where
-  -- |XDR identifier/type descriptor; argument value is ignored
+  -- |XDR identifier/type descriptor; argument value is ignored.
   xdrType :: a -> String
   xdrPut :: a -> B.Put
   xdrGet :: B.Get a
@@ -64,46 +64,52 @@ instance XDR XDR.Bool where
   xdrPut = xdrPutEnum
   xdrGet = xdrGetEnum
 
+-- |An XDR type defined with \"enum\".
+-- Note that the 'XDREnum' 'XDR.Int' value is not (necessarily) the same as the 'Enum' 'Int' value.
+-- The 'Enum' instance is derived automatically to allow 'succ', etc. to work usefully in Haskell, whereas the 'XDREnum' reflects the XDR-defined values.
 class (XDR a, Enum a) => XDREnum a where
-  fromXDREnum :: a -> XDR.Int
-  fromXDREnum = fromIntegral . fromEnum
-  toXDREnum :: Monad m => XDR.Int -> m a
+  xdrFromEnum :: a -> XDR.Int
+  xdrToEnum :: Monad m => XDR.Int -> m a
 
 instance XDREnum XDR.Int where
-  fromXDREnum = id
-  toXDREnum = return
+  xdrFromEnum = id
+  xdrToEnum = return
 
 instance XDREnum XDR.UnsignedInt where
-  fromXDREnum = fromIntegral
-  toXDREnum = return . fromIntegral
+  xdrFromEnum = fromIntegral
+  xdrToEnum = return . fromIntegral
 
-toXDREnum' :: XDREnum a => XDR.Int -> a
-toXDREnum' = runIdentity . toXDREnum
+xdrToEnum' :: XDREnum a => XDR.Int -> a
+xdrToEnum' = runIdentity . xdrToEnum
 
-xdrToEnum :: XDREnum a => Int -> a
-xdrToEnum = toXDREnum' . fromIntegral
-
+-- |Default implementation of 'xdrPut' for 'XDREnum'.
 xdrPutEnum :: XDREnum a => a -> B.Put
-xdrPutEnum = B.put . fromXDREnum
+xdrPutEnum = B.put . xdrFromEnum
 
+-- |Default implementation of 'xdrGet' for 'XDREnum'.
 xdrGetEnum :: XDREnum a => B.Get a
-xdrGetEnum = toXDREnum =<< B.get
+xdrGetEnum = xdrToEnum =<< B.get
 
 instance XDREnum XDR.Bool where
-  fromXDREnum False = 0
-  fromXDREnum True = 1
-  toXDREnum 0 = return False
-  toXDREnum 1 = return True
-  toXDREnum _ = fail "invalid bool"
+  xdrFromEnum False = 0
+  xdrFromEnum True = 1
+  xdrToEnum 0 = return False
+  xdrToEnum 1 = return True
+  xdrToEnum _ = fail "invalid bool"
 
+-- |An XDR type defined with \"union\".
 class XDR a => XDRUnion a where
   xdrDiscriminant :: a -> XDR.Int
+  -- |Put the body of a union, without its discriminant.
   xdrPutUnionArm :: a -> B.Put
+  -- |Get the body of a union based on its discriminant.
   xdrGetUnionArm :: XDR.Int -> B.Get a
 
+-- |Default implementation of 'xdrPut' for 'XDRUnion'.
 xdrPutUnion :: XDRUnion a => a -> B.Put
 xdrPutUnion a = xdrPut (xdrDiscriminant a) >> xdrPutUnionArm a
 
+-- |Default implementation of 'xdrGet' for 'XDRUnion'.
 xdrGetUnion :: XDRUnion a => B.Get a
 xdrGetUnion = xdrGet >>= xdrGetUnionArm
 
@@ -113,7 +119,7 @@ instance XDR a => XDR (XDR.Optional a) where
   xdrGet = xdrGetUnion
 
 instance XDR a => XDRUnion (XDR.Optional a) where
-  xdrDiscriminant = fromXDREnum . isJust
+  xdrDiscriminant = xdrFromEnum . isJust
   xdrPutUnionArm Nothing = return ()
   xdrPutUnionArm (Just a) = xdrPut a
   xdrGetUnionArm 0 = return Nothing
