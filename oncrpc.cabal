@@ -31,6 +31,7 @@ library
     cereal >=0.5.4,
     containers,
     haskell-src-exts >= 1.18,
+    network >= 2.6.3,
     parsec,
     sext
   default-language: Haskell2010
@@ -44,6 +45,7 @@ executable hsxdrgen
     cereal >=0.5.4,
     containers,
     haskell-src-exts >= 1.18,
+    network >= 2.6.3,
     parsec,
     sext,
     oncrpc
