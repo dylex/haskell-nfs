@@ -4,13 +4,14 @@
 module Network.ONCRPC.Prot where
 import qualified Prelude
 import qualified Control.Applicative
-import qualified Data.XDR.Types as XDR
-import qualified Data.XDR.Serial as XDR
+import qualified Data.XDR as XDR
 
 data Auth_flavor = AUTH_NONE
                  | AUTH_SYS
                  | AUTH_SHORT
                  | AUTH_DH
+                 | AUTH_KERB
+                 | AUTH_RSA
                  | RPCSEC_GSS
                  deriving (Prelude.Eq, Prelude.Ord, Prelude.Enum, Prelude.Bounded,
                            Prelude.Show)
@@ -25,16 +26,22 @@ instance XDR.XDREnum Auth_flavor where
   xdrFromEnum AUTH_SYS = 1
   xdrFromEnum AUTH_SHORT = 2
   xdrFromEnum AUTH_DH = 3
+  xdrFromEnum AUTH_KERB = 4
+  xdrFromEnum AUTH_RSA = 5
   xdrFromEnum RPCSEC_GSS = 6
   xdrToEnum 0 = Prelude.return AUTH_NONE
   xdrToEnum 1 = Prelude.return AUTH_SYS
   xdrToEnum 2 = Prelude.return AUTH_SHORT
   xdrToEnum 3 = Prelude.return AUTH_DH
+  xdrToEnum 4 = Prelude.return AUTH_KERB
+  xdrToEnum 5 = Prelude.return AUTH_RSA
   xdrToEnum 6 = Prelude.return RPCSEC_GSS
   xdrToEnum _ = Prelude.fail "invalid auth_flavor"
 
-data Opaque_auth = Opaque_auth{opaque_auth'flavor :: Auth_flavor,
-                               opaque_auth'body :: XDR.Opaque 400}
+type Opaque_auth_body = XDR.Opaque 400
+
+data Opaque_auth = Opaque_auth{opaque_auth'flavor :: !Auth_flavor,
+                               opaque_auth'body :: !Opaque_auth_body}
                  deriving (Prelude.Eq, Prelude.Show)
 
 instance XDR.XDR Opaque_auth where
@@ -183,8 +190,8 @@ instance XDR.XDREnum Auth_stat where
   xdrToEnum 14 = Prelude.return RPCSEC_GSS_CTXPROBLEM
   xdrToEnum _ = Prelude.fail "invalid auth_stat"
 
-data Rpc_msg = Rpc_msg{rpc_msg'xid :: XDR.UnsignedInt,
-                       rpc_msg'body :: Rpc_msg_body}
+data Rpc_msg = Rpc_msg{rpc_msg'xid :: !XDR.UnsignedInt,
+                       rpc_msg'body :: !Rpc_msg_body}
              deriving (Prelude.Eq, Prelude.Show)
 
 instance XDR.XDR Rpc_msg where
@@ -198,8 +205,8 @@ instance XDR.XDR Rpc_msg where
         Control.Applicative.<*> XDR.xdrGet
 
 data Rpc_msg_body = Rpc_msg_body'CALL{rpc_msg_body'cbody ::
-                                      Call_body}
-                  | Rpc_msg_body'REPLY{rpc_msg_body'rbody :: Reply_body}
+                                      !Call_body}
+                  | Rpc_msg_body'REPLY{rpc_msg_body'rbody :: !Reply_body}
                   deriving (Prelude.Eq, Prelude.Show)
 
 rpc_msg_body'mtype :: Rpc_msg_body -> Msg_type
@@ -226,11 +233,11 @@ instance XDR.XDRUnion Rpc_msg_body where
   xdrGetUnionArm _c
     = Prelude.fail "invalid rpc_msg_body discriminant"
 
-data Call_body = Call_body{call_body'rpcvers :: XDR.UnsignedInt,
-                           call_body'prog :: XDR.UnsignedInt,
-                           call_body'vers :: XDR.UnsignedInt,
-                           call_body'proc :: XDR.UnsignedInt, call_body'cred :: Opaque_auth,
-                           call_body'verf :: Opaque_auth}
+data Call_body = Call_body{call_body'rpcvers :: !XDR.UnsignedInt,
+                           call_body'prog :: !XDR.UnsignedInt,
+                           call_body'vers :: !XDR.UnsignedInt,
+                           call_body'proc :: !XDR.UnsignedInt, call_body'cred :: !Opaque_auth,
+                           call_body'verf :: !Opaque_auth}
                deriving (Prelude.Eq, Prelude.Show)
 
 instance XDR.XDR Call_body where
@@ -252,8 +259,8 @@ instance XDR.XDR Call_body where
         Control.Applicative.<*> XDR.xdrGet
 
 data Reply_body = Reply_body'MSG_ACCEPTED{reply_body'areply ::
-                                          Accepted_reply}
-                | Reply_body'MSG_DENIED{reply_body'rreply :: Rejected_reply}
+                                          !Accepted_reply}
+                | Reply_body'MSG_DENIED{reply_body'rreply :: !Rejected_reply}
                 deriving (Prelude.Eq, Prelude.Show)
 
 reply_body'stat :: Reply_body -> Reply_stat
@@ -280,8 +287,8 @@ instance XDR.XDRUnion Reply_body where
   xdrGetUnionArm _c = Prelude.fail "invalid reply_body discriminant"
 
 data Accepted_reply = Accepted_reply{accepted_reply'verf ::
-                                     Opaque_auth,
-                                     accepted_reply'reply_data :: Accepted_reply_data}
+                                     !Opaque_auth,
+                                     accepted_reply'reply_data :: !Accepted_reply_data}
                     deriving (Prelude.Eq, Prelude.Show)
 
 instance XDR.XDR Accepted_reply where
@@ -294,14 +301,13 @@ instance XDR.XDR Accepted_reply where
         XDR.xdrGet
         Control.Applicative.<*> XDR.xdrGet
 
-data Accepted_reply_data = Accepted_reply_data'SUCCESS{accepted_reply_data'results
-                                                       :: XDR.FixedOpaque 0}
+data Accepted_reply_data = Accepted_reply_data'SUCCESS{}
                          | Accepted_reply_data'PROG_MISMATCH{accepted_reply_data'mismatch_info'low
-                                                             :: XDR.UnsignedInt,
+                                                             :: !XDR.UnsignedInt,
                                                              accepted_reply_data'mismatch_info'high
-                                                             :: XDR.UnsignedInt}
+                                                             :: !XDR.UnsignedInt}
                          | Accepted_reply_data'default{accepted_reply_data'default ::
-                                                       Accept_stat}
+                                                       !Accept_stat}
                          deriving (Prelude.Eq, Prelude.Show)
 
 accepted_reply_data'stat :: Accepted_reply_data -> Accept_stat
@@ -320,7 +326,7 @@ instance XDR.XDRUnion Accepted_reply_data where
     Accepted_reply_data'default{accepted_reply_data'default = x}
     = XDR.xdrFromEnum x
   xdrPutUnionArm _x@Accepted_reply_data'SUCCESS{}
-    = XDR.xdrPut (accepted_reply_data'results _x)
+    = Control.Applicative.pure ()
   xdrPutUnionArm _x@Accepted_reply_data'PROG_MISMATCH{}
     = XDR.xdrPut (accepted_reply_data'mismatch_info'low _x)
         Control.Applicative.*>
@@ -329,7 +335,6 @@ instance XDR.XDRUnion Accepted_reply_data where
     = Control.Applicative.pure ()
   xdrGetUnionArm 0
     = Control.Applicative.pure Accepted_reply_data'SUCCESS
-        Control.Applicative.<*> XDR.xdrGet
   xdrGetUnionArm 2
     = Control.Applicative.pure Accepted_reply_data'PROG_MISMATCH
         Control.Applicative.<*> XDR.xdrGet
@@ -339,10 +344,10 @@ instance XDR.XDRUnion Accepted_reply_data where
         XDR.xdrToEnum _c
 
 data Rejected_reply = Rejected_reply'RPC_MISMATCH{rejected_reply'mismatch_info'low
-                                                  :: XDR.UnsignedInt,
+                                                  :: !XDR.UnsignedInt,
                                                   rejected_reply'mismatch_info'high ::
-                                                  XDR.UnsignedInt}
-                    | Rejected_reply'AUTH_ERROR{rejected_reply'auth_stat :: Auth_stat}
+                                                  !XDR.UnsignedInt}
+                    | Rejected_reply'AUTH_ERROR{rejected_reply'auth_stat :: !Auth_stat}
                     deriving (Prelude.Eq, Prelude.Show)
 
 rejected_reply'stat :: Rejected_reply -> Reject_stat
@@ -373,11 +378,11 @@ instance XDR.XDRUnion Rejected_reply where
     = Prelude.fail "invalid rejected_reply discriminant"
 
 data Authsys_parms = Authsys_parms{authsys_parms'stamp ::
-                                   XDR.UnsignedInt,
-                                   authsys_parms'machinename :: XDR.String 255,
-                                   authsys_parms'uid :: XDR.UnsignedInt,
-                                   authsys_parms'gid :: XDR.UnsignedInt,
-                                   authsys_parms'gids :: XDR.Array 16 XDR.UnsignedInt}
+                                   !XDR.UnsignedInt,
+                                   authsys_parms'machinename :: !(XDR.String 255),
+                                   authsys_parms'uid :: !XDR.UnsignedInt,
+                                   authsys_parms'gid :: !XDR.UnsignedInt,
+                                   authsys_parms'gids :: !(XDR.Array 16 XDR.UnsignedInt)}
                    deriving (Prelude.Eq, Prelude.Show)
 
 instance XDR.XDR Authsys_parms where

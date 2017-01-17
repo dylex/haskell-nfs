@@ -13,6 +13,7 @@ import qualified Language.Haskell.Exts.Build as HS
 import           Language.Haskell.Exts.Pretty (prettyPrintWithMode, PPHsMode(..), defaultMode)
 import qualified Language.Haskell.Exts.Syntax as HS
 
+import qualified Data.XDR as XDR
 import           Data.XDR.Specification
 import qualified Data.XDR.Parse as XDR
 
@@ -86,7 +87,7 @@ specType scope (TypeIdentifier t) = Just $ HS.TyCon () $ ""!t' where
   t' = identifier scope toUpper t
 specType _ t = HS.TyCon () . (!) "XDR" <$> primType t
 
-lengthType :: String -> Length -> HS.Type ()
+lengthType :: String -> XDR.Length -> HS.Type ()
 lengthType t l = HS.TyApp () (HS.TyCon () $ "XDR"!t) $ HS.TyPromoted () $ HS.PromotedInteger () (toInteger l) (show l)
 
 descrType :: Scope -> TypeDescriptor -> Maybe (HS.Type ())
@@ -102,11 +103,14 @@ descrType scope (TypeOptional t) = HS.TyApp ()        (HS.TyCon () $ "XDR"!"Opti
 declType' :: Scope -> Declaration -> HS.Type ()
 declType' scope (Declaration n t) = fromMaybe (error $ "nested data structures are not supported: " ++ show n) $ descrType scope t
 
+strictType :: HS.Type () -> HS.Type ()
+strictType = HS.TyBang () (HS.BangedTy ()) (HS.NoUnpackPragma ())
+
 declaration :: Scope -> String -> Declaration -> [HS.FieldDecl ()]
 declaration scope n (Declaration i (TypeSingle (TypeStruct (StructBody dl)))) =
   concatMap (declaration scope $ memberIdentifier id n i) dl
 declaration scope n d@(Declaration i _) =
-  [HS.FieldDecl () [HS.name $ memberIdentifier toLower n i] $ declType' scope d]
+  [HS.FieldDecl () [HS.name $ memberIdentifier toLower n i] $ strictType $ declType' scope d]
 
 optionalDeclaration :: Scope -> String -> OptionalDeclaration -> [HS.FieldDecl ()]
 optionalDeclaration scope = foldMap . declaration scope
@@ -174,7 +178,7 @@ definition scope (Definition n (TypeDef (TypeSingle (TypeUnion (UnionBody d al o
     (map (\((_,l),b) ->
       HS.RecDecl () (HS.name l) b) hal
     ++ maybeToList (HS.RecDecl () (HS.name hoc)
-      . (HS.FieldDecl () [HS.name hom] hdt :)
+      . (HS.FieldDecl () [HS.name hom] (strictType hdt) :)
       <$> ho))
     ["Eq", "Show"]
   , HS.TypeSig () [HS.name hdn] $ HS.TyFun () (HS.TyCon () $ ""!hn) hdt
@@ -242,8 +246,7 @@ generate s n l = HS.Module ()
   [ HS.LanguagePragma () $ map HS.name ["DataKinds", "MultiParamTypeClasses", "TypeSynonymInstances"] ]
   [ HS.ImportDecl () (HS.ModuleName () "Prelude") True False False Nothing Nothing Nothing
   , HS.ImportDecl () (HS.ModuleName () "Control.Applicative") True False False Nothing Nothing Nothing
-  , HS.ImportDecl () (HS.ModuleName () "Data.XDR.Types") True False False Nothing (Just $ HS.ModuleName () "XDR") Nothing
-  , HS.ImportDecl () (HS.ModuleName () "Data.XDR.Serial") True False False Nothing (Just $ HS.ModuleName () "XDR") Nothing
+  , HS.ImportDecl () (HS.ModuleName () "Data.XDR") True False False Nothing (Just $ HS.ModuleName () "XDR") Nothing
   ]
   $ concatMap (definition $ makeScope s) l
 

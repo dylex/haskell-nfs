@@ -142,7 +142,7 @@ endSemi1 p = p `P.endBy1` PT.semi token
 
 arrayLength, variableArrayLength :: Parser ArrayLength
 variableArrayLength =
-  VariableLength <$> PT.angles token (P.option maxLength value)
+  VariableLength <$> PT.angles token (P.option XDR.maxLength value)
 arrayLength =
   FixedLength    <$> PT.brackets token value
   <|> variableArrayLength

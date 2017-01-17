@@ -9,14 +9,9 @@ import qualified Network.ONCRPC.Types as RPC
 newtype Identifier = Identifier{ identifierString :: String }
   deriving (Show, Eq, Ord)
 
-type Length = XDR.UnsignedInt
-
-maxLength :: Length
-maxLength = maxBound
-
 data ArrayLength
-  = FixedLength    { arrayLength :: !Length }
-  | VariableLength { arrayLength :: !Length -- ^defaulted to maxLength
+  = FixedLength    { arrayLength :: !XDR.Length }
+  | VariableLength { arrayLength :: !XDR.Length -- ^defaulted to maxLength
     }
 
 data TypeDescriptor

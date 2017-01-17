@@ -5,13 +5,17 @@ enum auth_flavor {
 	AUTH_SYS        = 1,
 	AUTH_SHORT      = 2,
 	AUTH_DH         = 3,
-	RPCSEC_GSS      = 6 /* RFC2203 */
+	AUTH_KERB       = 4, /* RFC2695 */
+	AUTH_RSA        = 5,
+	RPCSEC_GSS      = 6  /* RFC2203 */
 	/* and more to be defined */
 };
 
+typedef opaque opaque_auth_body<400>;
+
 struct opaque_auth {
 	auth_flavor flavor;
-	opaque body<400>;
+	opaque_auth_body body;
 };
 
 enum msg_type {
@@ -104,7 +108,7 @@ struct accepted_reply {
 
 union accepted_reply_data switch (accept_stat stat) {
 	case SUCCESS:
-		opaque results[0];
+		void /* opaque results[0] */;
 		/*
 		 * procedure-specific results start here
 		 */

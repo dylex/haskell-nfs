@@ -1,4 +1,4 @@
--- | XDR: External Data Representation Types
+-- | XDR Types
 
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -20,6 +20,9 @@ module Data.XDR.Types
   , FixedString
   , String(..)
   , Optional
+
+  , Length
+  , maxLength
   )
   where
 
@@ -42,17 +45,23 @@ instance Eq a => Eq (FixedArray n a) where
   (==) = (==) `on` unwrap
   (/=) = (/=) `on` unwrap
 -- |Max length is recorded in the type but not enforced: most uses truncate
-newtype Array (n :: Nat) a = Array [a]
+newtype Array (n :: Nat) a = Array{ arrayList :: [a] }
   deriving (Eq, Ord, Functor, Applicative, Monad, Foldable, Monoid, Show)
 type FixedOpaque (n :: Nat) = Sext n ByteString
 instance Eq (FixedOpaque n) where
   (==) = (==) `on` unwrap
   (/=) = (/=) `on` unwrap
 -- |Max length is recorded in the type but not enforced: most uses truncate
-newtype Opaque (n :: Nat) = Opaque ByteString
+newtype Opaque (n :: Nat) = Opaque{ opaqueByteString :: ByteString }
   deriving (Eq, Ord, Monoid, Show, IsString)
 type FixedString (n :: Nat) = Sext n ByteString
 -- |Max length is recorded in the type but not enforced: most uses truncate
-newtype String (n :: Nat) = String ByteString
+newtype String (n :: Nat) = String{ stringByteString :: ByteString }
   deriving (Eq, Ord, Monoid, Show, IsString)
 type Optional a = Maybe a
+
+-- |Not a real XDR type, but used for length headers
+type Length = UnsignedInt
+
+maxLength :: Length
+maxLength = maxBound

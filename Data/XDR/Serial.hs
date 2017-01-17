@@ -14,18 +14,23 @@ module Data.XDR.Serial
   , XDRUnion(..)
   , xdrPutUnion
   , xdrGetUnion
-  )
-  where
+  
+  , xdrSerialize
+  , xdrSerializeLazy
+  , xdrDeserialize
+  , xdrDeserializeLazy
+  ) where
 
 import           Control.Monad (guard, unless, replicateM)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BSL
 import           Data.Functor.Identity (runIdentity)
 import           Data.Maybe (fromJust, isJust)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Serialize as B
 import qualified Data.Sext as Sext
 import qualified Data.XDR.Types as XDR
-import qualified Data.XDR.Specification as XDR
+-- import qualified Data.XDR.Specification as XDR
 import           GHC.TypeLits (KnownNat, natVal)
 
 -- |An XDR type that can be (de)serialized.
@@ -231,3 +236,15 @@ instance KnownNat n => XDR (XDR.String n) where
     xdrPutByteStringLen (fromInteger $ natVal s) b
   xdrGet = XDR.String <$>
     xdrGetByteStringLen (fromInteger $ natVal (Proxy :: Proxy n))
+
+xdrSerialize :: XDR a => a -> BS.ByteString
+xdrSerialize = B.runPut . xdrPut
+
+xdrSerializeLazy :: XDR a => a -> BSL.ByteString
+xdrSerializeLazy = B.runPutLazy . xdrPut
+
+xdrDeserialize :: (XDR a, Monad m) => BS.ByteString -> m a
+xdrDeserialize = either fail return . B.runGet xdrGet
+
+xdrDeserializeLazy :: (XDR a, Monad m) => BSL.ByteString -> m a
+xdrDeserializeLazy = either fail return . B.runGetLazy xdrGet
