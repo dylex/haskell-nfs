@@ -6,6 +6,9 @@ import qualified Prelude
 import qualified Control.Applicative
 import qualified Data.XDR as XDR
 
+rPC_VERS :: Prelude.Integral a => a
+rPC_VERS = 2
+
 data Auth_flavor = AUTH_NONE
                  | AUTH_SYS
                  | AUTH_SHORT
@@ -40,7 +43,7 @@ instance XDR.XDREnum Auth_flavor where
 
 type Opaque_auth_body = XDR.Opaque 400
 
-data Opaque_auth = Opaque_auth{opaque_auth'flavor :: !Auth_flavor,
+data Opaque_auth = Opaque_auth{opaque_auth'flavor :: !XDR.Int,
                                opaque_auth'body :: !Opaque_auth_body}
                  deriving (Prelude.Eq, Prelude.Show)
 

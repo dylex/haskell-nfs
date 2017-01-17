@@ -1,5 +1,7 @@
 /* RFC5531 */
 
+const RPC_VERS = 2;
+
 enum auth_flavor {
 	AUTH_NONE       = 0,
 	AUTH_SYS        = 1,
@@ -14,7 +16,7 @@ enum auth_flavor {
 typedef opaque opaque_auth_body<400>;
 
 struct opaque_auth {
-	auth_flavor flavor;
+	int flavor; /* may be "pseudo" value outside enum */
 	opaque_auth_body body;
 };
 
