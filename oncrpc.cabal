@@ -29,6 +29,10 @@ library
     Data.XDR.Generate
     Network.ONCRPC.Types
     Network.ONCRPC.Prot
+    Network.ONCRPC.Client
+  other-modules:
+    Data.Serialize.Get.Feeder
+    Network.Socket.All
   build-depends:       
     base >=4.8 && <5,
     bytestring,
@@ -37,6 +41,7 @@ library
     haskell-src-exts >= 1.18,
     network >= 2.6.3,
     parsec,
+    random,
     sext
   default-language: Haskell2010
   ghc-options: -Wall

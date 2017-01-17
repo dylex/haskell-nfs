@@ -237,6 +237,21 @@ instance KnownNat n => XDR (XDR.String n) where
   xdrGet = XDR.String <$>
     xdrGetByteStringLen (fromInteger $ natVal (Proxy :: Proxy n))
 
+instance (XDR a, XDR b) => XDR (a, b) where
+  xdrType (a, b) = xdrType a ++ '+' : xdrType b
+  xdrPut (a, b) = xdrPut a >> xdrPut b
+  xdrGet = (,) <$> xdrGet <*> xdrGet
+
+instance (XDR a, XDR b, XDR c) => XDR (a, b, c) where
+  xdrType (a, b, c) = xdrType a ++ '+' : xdrType b ++ '+' : xdrType c
+  xdrPut (a, b, c) = xdrPut a >> xdrPut b >> xdrPut c
+  xdrGet = (,,) <$> xdrGet <*> xdrGet <*> xdrGet
+
+instance (XDR a, XDR b, XDR c, XDR d) => XDR (a, b, c, d) where
+  xdrType (a, b, c, d) = xdrType a ++ '+' : xdrType b ++ '+' : xdrType c ++ '+' : xdrType d
+  xdrPut (a, b, c, d) = xdrPut a >> xdrPut b >> xdrPut c >> xdrPut d
+  xdrGet = (,,,) <$> xdrGet <*> xdrGet <*> xdrGet <*> xdrGet
+
 xdrSerialize :: XDR a => a -> BS.ByteString
 xdrSerialize = B.runPut . xdrPut
 
