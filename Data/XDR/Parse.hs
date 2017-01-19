@@ -59,7 +59,7 @@ addScope (Definition i b) = do
     TypeDef t -> void $ resolveTypeDescriptor t
     _ -> return ()
   s <- P.getState
-  case Map.insertLookupWithKey (\_ -> const) i (Binding (Map.member (toggleCase i) s) b) s of
+  case Map.insertLookupWithKey (const const) i (Binding (Map.member (toggleCase i) s) b) s of
     (Nothing, s') -> P.putState s'
     _ -> fail $ "duplicate identifier: " ++ show i
 

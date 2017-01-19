@@ -1,9 +1,11 @@
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Network.ONCRPC.Client
   (
   ) where
 
 import           Control.Concurrent (ThreadId, forkIO)
-import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, withMVar, modifyMVarMasked)
+import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, withMVar, modifyMVar_, modifyMVarMasked)
 import           Control.Monad (guard, when, unless)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
@@ -20,9 +22,9 @@ import           Data.Serialize.Get.Feeder
 import qualified Data.XDR as XDR
 import           Network.ONCRPC.Types
 
-data Request = Request
+data Request = forall a . XDR.XDR a => Request
   { requestBody :: BSL.ByteString -- ^for retransmits
-  , requestAction :: MVar BS.ByteString
+  , requestAction :: MVar (Reply a) -- (Maybe (RPC.Reply_body, BSL.ByteString))
   }
 
 data State = State
@@ -58,11 +60,11 @@ clientThread c sock@(Net.MkSocket _ _ Net.Stream _ _) = run where
   closed = ioError $ mkIOError eofErrorType "ONCRPC.Client: socket closed" Nothing Nothing
 clientThread _ _ = fail "ONCRPC.Client: Unsupported socket type"
 
-sendRequest :: State -> BSL.ByteString -> IO ()
-sendRequest s@State{ stateSocket = sock@(Net.MkSocket _ _ Net.Stream _ _) } b = do
+sendRequest :: Net.Socket -> BSL.ByteString -> IO ()
+sendRequest sock@(Net.MkSocket _ _ Net.Stream _ _) b = do
   NetAll.sendStorable sock $ mkFragmentHeader l (BSL.length h)
   NetBSL.sendAll sock h
-  unless l $ sendRequest s t
+  unless l $ sendRequest sock t
   where
   (h, t) = BSL.splitAt maxFragmentSize b
   l = BSL.null t
@@ -85,9 +87,19 @@ nextXID :: Client -> IO XID
 nextXID cv = modifyMVarMasked cv $ \s@State{ stateXID = x } ->
   return (s{ stateXID = x + 1 }, x)
 
-rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Call a -> IO (Reply r)
+rpcCall :: forall a r . (XDR.XDR a, XDR.XDR r) => Client -> Call a -> IO (Reply r)
 rpcCall cv a = do
-  xid <- nextXID cv
-  withMVar cv $ flip sendRequest $ XDR.xdrSerializeLazy (xid, a)
-  fail "TODO"
-
+  rv <- newEmptyMVar
+  modifyMVar_ cv $ \s -> do
+    let x = stateXID s
+        q = Request
+          { requestBody = XDR.xdrSerializeLazy (MsgCall x a :: Msg a r)
+          , requestAction = rv
+          }
+        (p, r) = IntMap.insertLookupWithKey (const const) (fromIntegral x) q (stateRequests s)
+    case p of
+      Nothing -> return ()
+      Just (Request _ a) -> putMVar a ReplyFail -- should only happen on xid wraparound
+    sendRequest (stateSocket s) $ requestBody q
+    return s{ stateRequests = r, stateXID = x+1 }
+  takeMVar rv

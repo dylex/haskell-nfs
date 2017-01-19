@@ -87,6 +87,9 @@ specType scope (TypeIdentifier t) = Just $ HS.TyCon () $ ""!t' where
   t' = identifier scope toUpper t
 specType _ t = HS.TyCon () . (!) "XDR" <$> primType t
 
+specType' :: Scope -> TypeSpecifier -> HS.Type ()
+specType' scope = fromMaybe (error $ "parameter data structures are not supported") . specType scope
+
 lengthType :: String -> XDR.Length -> HS.Type ()
 lengthType t l = HS.TyApp () (HS.TyCon () $ "XDR"!t) $ HS.TyPromoted () $ HS.PromotedInteger () (toInteger l) (show l)
 
@@ -235,19 +238,50 @@ definition scope (Definition n (TypeDef t)) =
   hn = identifier scope toUpper n
 definition scope (Definition n (Constant v)) =
   [ HS.TypeSig () [HS.name hn] constantType
-  , HS.nameBind (HS.name hn) (HS.intE v)
+  , HS.nameBind (HS.name hn) $ HS.intE v
   ] where
   hn = identifier scope toLower n
-definition _ (Definition _ (Program _ _)) = [] -- TODO
+definition scope (Definition n (Program vl px)) =
+  [ HS.TypeSig () [HS.name hn'] $ HS.TyCon () $ ""!hn
+  , HS.nameBind (HS.name hn') $ HS.appFun (""!.hn) $ map (\(vn, Version _ rl vx) ->
+      HS.appFun (""!.vn) $ map (\(Procedure _ _ _ rx) ->
+          HS.appFun ("RPC"!."Procedure") $ map (HS.intE . toInteger) [px, vx, rx])
+        rl)
+      hvl
+  , dataDecl hn [HS.RecDecl () (HS.name hn) (map (\(vn, _) ->
+      HS.FieldDecl () [HS.name $ mapHead toLower vn] $ strictType $ HS.TyCon () $ ""!vn)
+    hvl)] []
+  ] ++ map (\(vn, Version _ rl _) ->
+    dataDecl vn [HS.RecDecl () (HS.name vn) (map (\(Procedure rr rn ra _) ->
+      HS.FieldDecl () [HS.name $ memberIdentifier toLower vn rn]
+        $ strictType $ HS.TyApp () (HS.TyApp () (HS.TyCon () $ "RPC"!"Procedure")
+        $ tt $ map (specType' scope) ra)
+        $ maybe (HS.unit_tycon ()) (specType' scope) rr)
+    rl)] []
+  ) hvl
+  where
+  hn = identifier scope toUpper n
+  hn' = mapHead toLower hn
+  hvl = map (memberIdentifier toUpper hn . versionIdentifier &&& id) vl
+  tt [] = HS.unit_tycon ()
+  tt [t] = t
+  tt l = HS.TyTuple () HS.Boxed l
+
+hasProgramDefinition :: Specification -> Bool
+hasProgramDefinition = any isProgramDefinition where
+  isProgramDefinition (Definition _ (Program _ _)) = True
+  isProgramDefinition _ = False
 
 generate :: XDR.Scope -> String -> Specification -> HS.Module ()
 generate s n l = HS.Module ()
   (Just $ HS.ModuleHead () (HS.ModuleName () n) Nothing Nothing)
   [ HS.LanguagePragma () $ map HS.name ["DataKinds", "MultiParamTypeClasses", "TypeSynonymInstances"] ]
-  [ HS.ImportDecl () (HS.ModuleName () "Prelude") True False False Nothing Nothing Nothing
+  ([HS.ImportDecl () (HS.ModuleName () "Prelude") True False False Nothing Nothing Nothing
   , HS.ImportDecl () (HS.ModuleName () "Control.Applicative") True False False Nothing Nothing Nothing
   , HS.ImportDecl () (HS.ModuleName () "Data.XDR") True False False Nothing (Just $ HS.ModuleName () "XDR") Nothing
-  ]
+  ] ++ if hasProgramDefinition l then
+  [ HS.ImportDecl () (HS.ModuleName () "Network.ONCRPC.Types") True False False Nothing (Just $ HS.ModuleName () "RPC") Nothing ]
+  else [])
   $ concatMap (definition $ makeScope s) l
 
 generateFromFile :: FilePath -> String -> IO String
