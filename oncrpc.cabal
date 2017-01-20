@@ -29,9 +29,10 @@ library
     Data.XDR.Generate
     Network.ONCRPC.Types
     Network.ONCRPC.Prot
+    Network.ONCRPC.RecordMarking
+    Network.ONCRPC.Message
     Network.ONCRPC.Client
   other-modules:
-    Data.Serialize.Get.Feeder
     Network.Socket.All
   build-depends:       
     base >=4.8 && <5,

@@ -1,26 +1,23 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Network.ONCRPC.Client
-  (
+  ( newClient
+  , rpcCall
   ) where
 
 import           Control.Concurrent (ThreadId, forkIO)
-import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, withMVar, modifyMVar_, modifyMVarMasked)
-import           Control.Monad (guard, when, unless)
-import qualified Data.ByteString as BS
+import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, modifyMVar_, modifyMVarMasked)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Maybe (fromMaybe)
 import qualified Network.Socket as Net
-import qualified Network.Socket.All as NetAll
-import qualified Network.Socket.ByteString as NetBS
-import qualified Network.Socket.ByteString.Lazy as NetBSL
 import           System.IO.Error (ioError, mkIOError, eofErrorType)
 import           System.Random (randomIO)
 
-import           Data.Serialize.Get.Feeder
 import qualified Data.XDR as XDR
+import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
+import           Network.ONCRPC.Message
 
 data Request = forall a . XDR.XDR a => Request
   { requestBody :: BSL.ByteString -- ^for retransmits
@@ -37,38 +34,21 @@ data State = State
 type Client = MVar State
 
 clientThread :: Client -> Net.Socket -> IO ()
-clientThread c sock@(Net.MkSocket _ _ Net.Stream _ _) = run where
-  run = do
-    r <- get Nothing
-    return ()
-  got = do
-    return ()
-  get f = do
-    h <- maybe closed return =<< NetAll.recvStorable sock
-    let (e, l) = unFragmentHeader h
-        f' = fromMaybe (feeder got (l <$ guard e)) f
-    (if e then return . fed else get . Just) =<< getBS l f'
-  getBS n f = do
-    b <- NetBS.recv sock n
-    let l = BS.length b
-        f' = feed f b
-    if l < n
-      then do
-        when (l == 0) closed
-        getBS (n - l) f'
-      else return f'
+clientThread cv sock = next initMessageState where
+  next ms =
+    maybe closed msg =<< recvGet sock XDR.xdrGet ms
+  msg (Just (RPC.Rpc_msg x (RPC.Rpc_msg_body'REPLY b)), ms) = do
+    q <- modifyMVarMasked cv $ \s@State{ stateRequests = m } -> do
+      let (q, m') = IntMap.updateLookupWithKey (const $ const Nothing) (fromIntegral x) m
+      return (s{ stateRequests = m' }, q)
+    case q of
+      Nothing -> next $ messageIgnore ms
+      Just (Request _ a) -> do
+        (r, ms') <- maybe closed return =<< recvGet sock (getReply b) ms
+        putMVar a $ fromMaybe ReplyFail r
+        next $ ms'
+  msg (_, ms) = next $ messageIgnore ms
   closed = ioError $ mkIOError eofErrorType "ONCRPC.Client: socket closed" Nothing Nothing
-clientThread _ _ = fail "ONCRPC.Client: Unsupported socket type"
-
-sendRequest :: Net.Socket -> BSL.ByteString -> IO ()
-sendRequest sock@(Net.MkSocket _ _ Net.Stream _ _) b = do
-  NetAll.sendStorable sock $ mkFragmentHeader l (BSL.length h)
-  NetBSL.sendAll sock h
-  unless l $ sendRequest sock t
-  where
-  (h, t) = BSL.splitAt maxFragmentSize b
-  l = BSL.null t
-sendRequest _ _ = fail "ONCRPC.Client: Unsupported socket type"
 
 newClient :: Net.Socket -> IO Client
 newClient sock = do
@@ -83,10 +63,6 @@ newClient sock = do
     }
   return c
 
-nextXID :: Client -> IO XID
-nextXID cv = modifyMVarMasked cv $ \s@State{ stateXID = x } ->
-  return (s{ stateXID = x + 1 }, x)
-
 rpcCall :: forall a r . (XDR.XDR a, XDR.XDR r) => Client -> Call a -> IO (Reply r)
 rpcCall cv a = do
   rv <- newEmptyMVar
@@ -99,7 +75,7 @@ rpcCall cv a = do
         (p, r) = IntMap.insertLookupWithKey (const const) (fromIntegral x) q (stateRequests s)
     case p of
       Nothing -> return ()
-      Just (Request _ a) -> putMVar a ReplyFail -- should only happen on xid wraparound
-    sendRequest (stateSocket s) $ requestBody q
+      Just (Request _ v) -> putMVar v ReplyFail -- should only happen on xid wraparound
+    sendMessage (stateSocket s) $ requestBody q
     return s{ stateRequests = r, stateXID = x+1 }
   takeMVar rv

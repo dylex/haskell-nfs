@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Types
   ( XID
@@ -7,23 +6,18 @@ module Network.ONCRPC.Types
   , ProcNum
   , Procedure(..)
 
-  , FragmentHeader
-  , maxFragmentSize
-  , unFragmentHeader
-  , mkFragmentHeader
-
   , Auth(..)
   , Call(..)
   , Reply(..)
+  , getReply
   , Msg(..)
   ) where
 
+import           Control.Applicative ((<|>))
 import           Control.Monad (guard)
-import           Data.Bits (Bits, finiteBitSize, bit, clearBit, setBit, testBit)
 import qualified Data.ByteString as BS
 import qualified Data.Serialize as S
 import           Data.Word (Word32)
-import           Network.Socket (htonl, ntohl)
 
 import qualified Data.XDR as XDR
 import           Data.XDR.Serial
@@ -40,25 +34,6 @@ data Procedure a r = Procedure
   , procedureVers :: !VersNum
   , procedureProc :: !ProcNum
   }
-
--- |A raw RPC record fragment header, stored in network byte order.
-type FragmentHeader = Word32
-
-fragmentHeaderBit :: Int
-fragmentHeaderBit = pred $ finiteBitSize (0 :: FragmentHeader)
-
-maxFragmentSize :: (Bits i, Integral i) => i
-maxFragmentSize = pred $ bit fragmentHeaderBit
-
-unFragmentHeader :: Integral i => FragmentHeader -> (Bool, i)
-unFragmentHeader w =
-  (testBit w' fragmentHeaderBit, fromIntegral $ clearBit w' fragmentHeaderBit)
-  where w' = ntohl w
-
-mkFragmentHeader :: Integral i => Bool -> i -> FragmentHeader
-mkFragmentHeader l n = htonl $ sb l $ fromIntegral n where
-  sb True x = setBit x fragmentHeaderBit
-  sb False x = x
 
 -- |More translucent version of 'RPC.Opaque_auth' union (not expressible in XDR)
 data Auth
@@ -131,7 +106,7 @@ data Reply a
     }
   | ReplyError
     { replyVerf :: !Auth
-    , replyError :: !RPC.Accepted_reply_data -- ^non-SUCCESS only
+    , replyError :: !RPC.Accepted_reply_data
     }
   | ReplyRejected
     { replyRejected :: !RPC.Rejected_reply
@@ -156,8 +131,8 @@ splitReply (ReplyRejected r) =
 splitReply ReplyFail = (error "splitReply ReplyFail", Nothing)
 
 getReply :: XDR.XDR a => RPC.Reply_body -> S.Get (Reply a)
-getReply (RPC.Reply_body'MSG_ACCEPTED (RPC.Accepted_reply v RPC.Accepted_reply_data'SUCCESS)) =
-  Reply (unopacifyAuth v) <$> xdrGet
+getReply (RPC.Reply_body'MSG_ACCEPTED (RPC.Accepted_reply v d@RPC.Accepted_reply_data'SUCCESS)) =
+  Reply (unopacifyAuth v) <$> xdrGet <|> return (ReplyError (unopacifyAuth v) d)
 getReply (RPC.Reply_body'MSG_ACCEPTED (RPC.Accepted_reply v e)) =
   return $ ReplyError (unopacifyAuth v) e
 getReply (RPC.Reply_body'MSG_DENIED r) =
