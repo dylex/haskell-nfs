@@ -5,10 +5,8 @@ module Data.XDR.Generate
   ) where
 
 import           Control.Arrow ((***), (&&&))
-import           Data.Char (toLower, toUpper, isAlpha, isUpper)
-import qualified Data.Map as Map
+import           Data.Char (isAlpha, isUpper)
 import           Data.Maybe (fromMaybe, maybeToList)
-import qualified Data.Set as Set
 import qualified Language.Haskell.Exts.Build as HS
 import           Language.Haskell.Exts.Pretty (prettyPrintWithMode, PPHsMode(..), defaultMode)
 import qualified Language.Haskell.Exts.Syntax as HS
@@ -16,27 +14,7 @@ import qualified Language.Haskell.Exts.Syntax as HS
 import qualified Data.XDR as XDR
 import           Data.XDR.Specification
 import qualified Data.XDR.Parse as XDR
-
--- |Set of non-unique identifiers, to which we will append a tick
-type Scope = Set.Set Identifier
-
-makeScope :: XDR.Scope -> Scope
-makeScope = Map.keysSet . Map.filter XDR.bindingInitCaseConflict
-
-mapHead :: (a -> a) -> [a] -> [a]
-mapHead f (~(h:t)) = f h : t
-
-identifier :: Scope -> (Char -> Char) -> Identifier -> String
-identifier scope u i =
-  (if Set.member i scope then (++"'") else id)
-  $ mapHead u $ identifierString i
-
--- |Struct and union members
-member :: (Char -> Char) -> String -> String -> String
-member u s n = mapHead u s ++ '\'' : n
-
-memberIdentifier :: (Char -> Char) -> String -> Identifier -> String
-memberIdentifier u s = member u s . identifierString
+import           Data.XDR.Reident
 
 name :: String -> HS.Name ()
 name s@(~(c:_))
@@ -82,44 +60,43 @@ primType TypeQuadruple     = Just "Quadruple"
 primType TypeBool          = Just "Bool"
 primType _                 = Nothing
 
-specType :: Scope -> TypeSpecifier -> Maybe (HS.Type ())
-specType scope (TypeIdentifier t) = Just $ HS.TyCon () $ ""!t' where
-  t' = identifier scope toUpper t
-specType _ t = HS.TyCon () . (!) "XDR" <$> primType t
+specType :: TypeSpecifier -> Maybe (HS.Type ())
+specType (TypeIdentifier t) = Just $ HS.TyCon () $ ""!t
+specType t = HS.TyCon () . (!) "XDR" <$> primType t
 
-specType' :: Scope -> TypeSpecifier -> HS.Type ()
-specType' scope = fromMaybe (error $ "parameter data structures are not supported") . specType scope
+specType' :: TypeSpecifier -> HS.Type ()
+specType' = fromMaybe (error $ "parameter data structures are not supported") . specType
 
 lengthType :: String -> XDR.Length -> HS.Type ()
 lengthType t l = HS.TyApp () (HS.TyCon () $ "XDR"!t) $ HS.TyPromoted () $ HS.PromotedInteger () (toInteger l) (show l)
 
-descrType :: Scope -> TypeDescriptor -> Maybe (HS.Type ())
-descrType scope (TypeSingle t) = specType scope t
-descrType scope (TypeArray t (FixedLength l))    = HS.TyApp () (lengthType "FixedArray"  l) <$> specType scope t
-descrType scope (TypeArray t (VariableLength l)) = HS.TyApp () (lengthType "Array"       l) <$> specType scope t
-descrType _     (TypeOpaque  (FixedLength l))    = Just $       lengthType "FixedOpaque" l
-descrType _     (TypeOpaque  (VariableLength l)) = Just $       lengthType "Opaque"      l
-descrType _     (TypeString  (FixedLength l))    = Just $       lengthType "FixedString" l
-descrType _     (TypeString  (VariableLength l)) = Just $       lengthType "String"      l
-descrType scope (TypeOptional t) = HS.TyApp ()        (HS.TyCon () $ "XDR"!"Optional")      <$> specType scope t
+descrType :: TypeDescriptor -> Maybe (HS.Type ())
+descrType (TypeSingle t) = specType t
+descrType (TypeArray t (FixedLength l))    = HS.TyApp () (lengthType "FixedArray"  l) <$> specType t
+descrType (TypeArray t (VariableLength l)) = HS.TyApp () (lengthType "Array"       l) <$> specType t
+descrType (TypeOpaque  (FixedLength l))    = Just $       lengthType "FixedOpaque" l
+descrType (TypeOpaque  (VariableLength l)) = Just $       lengthType "Opaque"      l
+descrType (TypeString  (FixedLength l))    = Just $       lengthType "FixedString" l
+descrType (TypeString  (VariableLength l)) = Just $       lengthType "String"      l
+descrType (TypeOptional t) = HS.TyApp ()        (HS.TyCon () $ "XDR"!"Optional")      <$> specType t
 
-declType' :: Scope -> Declaration -> HS.Type ()
-declType' scope (Declaration n t) = fromMaybe (error $ "nested data structures are not supported: " ++ show n) $ descrType scope t
+declType' :: Declaration -> HS.Type ()
+declType' (Declaration n t) = fromMaybe (error $ "nested data structures are not supported: " ++ show n) $ descrType t
 
 strictType :: HS.Type () -> HS.Type ()
 strictType = HS.TyBang () (HS.BangedTy ()) (HS.NoUnpackPragma ())
 
-declaration :: Scope -> String -> Declaration -> [HS.FieldDecl ()]
-declaration scope n (Declaration i (TypeSingle (TypeStruct (StructBody dl)))) =
-  concatMap (declaration scope $ memberIdentifier id n i) dl
-declaration scope n d@(Declaration i _) =
-  [HS.FieldDecl () [HS.name $ memberIdentifier toLower n i] $ strictType $ declType' scope d]
+declaration :: Declaration -> [HS.FieldDecl ()]
+declaration (Declaration _ (TypeSingle (TypeStruct (StructBody dl)))) =
+  concatMap declaration dl
+declaration d@(Declaration i _) =
+  [HS.FieldDecl () [HS.name i] $ strictType $ declType' d]
 
-optionalDeclaration :: Scope -> String -> OptionalDeclaration -> [HS.FieldDecl ()]
-optionalDeclaration scope = foldMap . declaration scope
+optionalDeclaration :: OptionalDeclaration -> [HS.FieldDecl ()]
+optionalDeclaration = foldMap declaration
 
-typeDef :: Identifier -> HS.Decl ()
-typeDef = HS.simpleFun (HS.name "xdrType") (HS.name "_") . HS.strE . identifierString
+typeDef :: String -> HS.Decl ()
+typeDef = HS.simpleFun (HS.name "xdrType") (HS.name "_") . HS.strE
 
 fieldNames :: [HS.FieldDecl ()] -> [HS.Name ()]
 fieldNames = concatMap $ \(HS.FieldDecl _ nl _) -> nl
@@ -136,144 +113,127 @@ getFields n = foldl (\c _ -> HS.infixApp c (HS.QVarOp () $ "Control.Applicative"
 pureCon :: String -> HS.Exp ()
 pureCon = HS.app ("Control.Applicative"!."pure") . HS.Con () . (""!)
 
-defaultIdentifier :: Identifier
-defaultIdentifier = Identifier "default"
-
 sMatch :: String -> HS.Pat () -> HS.Exp () -> HS.Match ()
 sMatch n p e = HS.Match () (HS.name n) [p] (HS.UnGuardedRhs () e) Nothing
 
-definition :: Scope -> Definition -> [HS.Decl ()]
-definition scope (Definition n (TypeDef (TypeSingle (TypeEnum (EnumBody el))))) =
-  [ dataDecl hn
-    (map (flip (HS.ConDecl ()) [] . HS.name . fst) hel)
+definition :: Definition -> [HS.Decl ()]
+definition (Definition n (TypeDef (TypeSingle (TypeEnum (EnumBody el))))) =
+  [ dataDecl n
+    (map (flip (HS.ConDecl ()) [] . HS.name . fst) el)
     ["Eq", "Ord", "Enum", "Bounded", "Show"]
-  , instDecl ("XDR"!"XDR") hn
+  , instDecl ("XDR"!"XDR") n
     [ typeDef n
     , HS.nameBind (HS.name "xdrPut") $ "XDR"!."xdrPutEnum"
     , HS.nameBind (HS.name "xdrGet") $ "XDR"!."xdrGetEnum"
     ]
-  , instDecl ("XDR"!"XDREnum") hn
+  , instDecl ("XDR"!"XDREnum") n
     [ HS.FunBind () $ map (\(i,v) ->
-        sMatch "xdrFromEnum" (HS.pApp (HS.name i) []) $ HS.intE v)
-      hel
+        sMatch "xdrFromEnum" (HS.pApp (HS.name i) []) $ HS.intE $ toInteger v)
+      el
     , HS.FunBind () $ map (\(i,v) ->
-        sMatch "xdrToEnum" (HS.intP v) $ HS.app ("Prelude"!."return") $ HS.Con () $ ""!i)
-      hel ++
-      [ sMatch "xdrToEnum" (HS.PWildCard ()) $ HS.app ("Prelude"!."fail") $ HS.strE $ "invalid " ++ identifierString n]
+        sMatch "xdrToEnum" (HS.intP $ toInteger v) $ HS.app ("Prelude"!."return") $ HS.Con () $ ""!i)
+      el ++
+      [ sMatch "xdrToEnum" (HS.PWildCard ()) $ HS.app ("Prelude"!."fail") $ HS.strE $ "invalid " ++ n]
     ]
-  ] where
-  hn = identifier scope toUpper n
-  hel = map (identifier scope toUpper *** toInteger) el
-definition scope (Definition n (TypeDef (TypeSingle (TypeStruct (StructBody dl))))) =
-  [ dataDecl hn
-    [HS.RecDecl () (HS.name hn) hdl]
+  ]
+definition (Definition n (TypeDef (TypeSingle (TypeStruct (StructBody dl))))) =
+  [ dataDecl n
+    [HS.RecDecl () (HS.name n) hdl]
     ["Eq", "Show"]
-  , instDecl ("XDR"!"XDR") hn
+  , instDecl ("XDR"!"XDR") n
     [ typeDef n
     , HS.simpleFun (HS.name "xdrPut") (HS.name "_x") $ putFields (HS.var $ HS.name "_x") hdl
-    , HS.nameBind (HS.name "xdrGet") $ getFields (pureCon hn) hdl
+    , HS.nameBind (HS.name "xdrGet") $ getFields (pureCon n) hdl
     ]
   ] where
-  hn = identifier scope toUpper n
-  hdl = concatMap (declaration scope hn) dl
-definition scope (Definition n (TypeDef (TypeSingle (TypeUnion (UnionBody d al o))))) =
-  [ dataDecl hn
-    (map (\((_,l),b) ->
-      HS.RecDecl () (HS.name l) b) hal
-    ++ maybeToList (HS.RecDecl () (HS.name hoc)
-      . (HS.FieldDecl () [HS.name hom] (strictType hdt) :)
-      <$> ho))
+  hdl = concatMap declaration dl
+definition (Definition n (TypeDef (TypeSingle (TypeUnion (UnionBody d@(Declaration dn _) cl o))))) =
+  [ dataDecl n
+    (map (\(_,(l,b)) ->
+      HS.RecDecl () (HS.name l) b) hcl
+    ++ maybe [] (\(l,b) -> [HS.RecDecl () (HS.name l)
+      $ HS.FieldDecl () [HS.name hom] (strictType hdt) : b])
+      ho)
     ["Eq", "Show"]
-  , HS.TypeSig () [HS.name hdn] $ HS.TyFun () (HS.TyCon () $ ""!hn) hdt
-  , HS.nameBind (HS.name hdn) $ HS.infixApp ("XDR"!."xdrToEnum'") (HS.QVarOp () $ "Prelude"!".") $ "XDR"!."xdrDiscriminant"
-  , instDecl ("XDR"!"XDR") hn
+  , HS.TypeSig () [HS.name dn] $ HS.TyFun () (HS.TyCon () $ ""!n) hdt
+  , HS.nameBind (HS.name dn) $ HS.infixApp ("XDR"!."xdrToEnum'") (HS.QVarOp () $ "Prelude"!".") $ "XDR"!."xdrDiscriminant"
+  , instDecl ("XDR"!"XDR") n
     [ typeDef n
     , HS.nameBind (HS.name "xdrPut") $ "XDR"!."xdrPutUnion"
     , HS.nameBind (HS.name "xdrGet") $ "XDR"!."xdrGetUnion"
     ]
-  , instDecl ("XDR"!"XDRUnion") hn
-    [ HS.FunBind () $ map (\((c,l),_) ->
+  , instDecl ("XDR"!"XDRUnion") n
+    [ HS.FunBind () $ map (\(c,(l,_)) ->
         sMatch "xdrDiscriminant"
           (HS.PRec () (""!l) [])
           $ HS.intE c)
-      hal
-      ++ maybeToList ((
-        sMatch "xdrDiscriminant" (HS.PRec () (""!hoc)
+      hcl
+      ++ maybe [] (\(l,_) ->
+        [sMatch "xdrDiscriminant" (HS.PRec () (""!l)
           [HS.PFieldPat () (""!hom) (HS.pvar $ HS.name "x")])
-          $ HS.app ("XDR"!."xdrFromEnum") $ HS.var $ HS.name "x")
-        <$ o)
-    , HS.FunBind () $ map (\((_,l),b) ->
-        sMatch "xdrPutUnionArm"
-          (HS.PAsPat () (HS.name "_x") $ HS.PRec () (""!l) [])
-          $ putFields (HS.var $ HS.name "_x") b)
-      hal
-      ++ maybeToList ((sMatch "xdrPutUnionArm"
-          (HS.PAsPat () (HS.name "_x") $ HS.PRec () (""!hoc) [])
-          . putFields (HS.var $ HS.name "_x"))
-        <$> ho)
-    , HS.FunBind () $ map (\((c,l),b) ->
+          $ HS.app ("XDR"!."xdrFromEnum") $ HS.var $ HS.name "x"])
+        ho
+    , HS.FunBind () $ map (putarm . snd) hcl
+      ++ maybeToList (putarm <$> ho)
+    , HS.FunBind () $ map (\(c,(l,b)) ->
         sMatch "xdrGetUnionArm"
           (HS.intP c)
           $ getFields (pureCon l) b)
-      hal
+      hcl
       ++ [sMatch "xdrGetUnionArm"
           (HS.pvar $ HS.name "_c")
           $ maybe
-            (HS.app ("Prelude"!."fail") $ HS.strE $ "invalid " ++ identifierString n ++ " discriminant")
-            (getFields (HS.infixApp (HS.Con () $ ""!hoc) (HS.QVarOp () $ "Control.Applicative"!"<$>")
-              (HS.app ("XDR"!."xdrToEnum") $ HS.var $ HS.name "_c")))
+            (HS.app ("Prelude"!."fail") $ HS.strE $ "invalid " ++ n ++ " discriminant")
+            (\(l,b) -> getFields (HS.infixApp (HS.Con () $ ""!l) (HS.QVarOp () $ "Control.Applicative"!"<$>")
+              (HS.app ("XDR"!."xdrToEnum") $ HS.var $ HS.name "_c")) b)
             ho]
     ]
   ] where
-  hn = identifier scope toUpper n
-  hdn = memberIdentifier toLower hn $ declarationIdentifier d
-  hdt = declType' scope d
-  hal = map ((toInteger . unionCase &&& member toUpper hn . unionCaseLiteral) &&& optionalDeclaration scope hn . unionDeclaration) al
-  hoc = memberIdentifier toUpper hn defaultIdentifier
-  hom = mapHead toLower hoc
-  ho = optionalDeclaration scope hn <$> o
-definition scope (Definition n (TypeDef t)) =
-  [ HS.TypeDecl () (HS.DHead () $ HS.name hn) $ declType' scope (Declaration n t)
-  ] where
-  hn = identifier scope toUpper n
-definition scope (Definition n (Constant v)) =
-  [ HS.TypeSig () [HS.name hn] constantType
-  , HS.nameBind (HS.name hn) $ HS.intE v
-  ] where
-  hn = identifier scope toLower n
-definition scope (Definition n (Program vl px)) =
-  [ HS.TypeSig () [HS.name hn'] $ HS.TyCon () $ ""!hn
-  , HS.nameBind (HS.name hn') $ HS.appFun (""!.hn) $ map (\(vn, Version _ rl vx) ->
-      HS.appFun (""!.vn) $ map (\(Procedure _ _ _ rx) ->
+  putarm (l,b) = sMatch "xdrPutUnionArm"
+    (HS.PAsPat () (HS.name "_x") $ HS.PRec () (""!l) [])
+    $ putFields (HS.var $ HS.name "_x") b
+  hdt = declType' d
+  hcl = map (toInteger *** arm) cl
+  hom = dn ++ "'"
+  ho = arm <$> o
+  arm = unionCaseIdentifier &&& optionalDeclaration . unionDeclaration
+definition (Definition n (TypeDef t)) =
+  [ HS.TypeDecl () (HS.DHead () $ HS.name n) $ declType' (Declaration n t)
+  ]
+definition (Definition n (Constant v)) =
+  [ HS.TypeSig () [HS.name n] constantType
+  , HS.nameBind (HS.name n) $ HS.intE v
+  ]
+definition (Definition n (Program t vl px)) =
+  [ HS.TypeSig () [HS.name n] $ HS.TyCon () $ ""!t
+  , HS.nameBind (HS.name n) $ HS.appFun (""!.t) $ map (\(Version _ vt rl vx) ->
+      HS.appFun (""!.vt) $ map (\(Procedure _ _ _ rx) ->
           HS.appFun ("RPC"!."Procedure") $ map (HS.intE . toInteger) [px, vx, rx])
         rl)
-      hvl
-  , dataDecl hn [HS.RecDecl () (HS.name hn) (map (\(vn, _) ->
-      HS.FieldDecl () [HS.name $ mapHead toLower vn] $ strictType $ HS.TyCon () $ ""!vn)
-    hvl)] []
-  ] ++ map (\(vn, Version _ rl _) ->
-    dataDecl vn [HS.RecDecl () (HS.name vn) (map (\(Procedure rr rn ra _) ->
-      HS.FieldDecl () [HS.name $ memberIdentifier toLower vn rn]
+      vl
+  , dataDecl t [HS.RecDecl () (HS.name t) (map (\(Version vn vt _ _) ->
+      HS.FieldDecl () [HS.name vn] $ strictType $ HS.TyCon () $ ""!vt)
+    vl)] []
+  ] ++ map (\(Version _ vt rl _) ->
+    dataDecl vt [HS.RecDecl () (HS.name vt) (map (\(Procedure rr rn ra _) ->
+      HS.FieldDecl () [HS.name rn]
         $ strictType $ HS.TyApp () (HS.TyApp () (HS.TyCon () $ "RPC"!"Procedure")
-        $ tt $ map (specType' scope) ra)
-        $ maybe (HS.unit_tycon ()) (specType' scope) rr)
+        $ tt $ map specType' ra)
+        $ maybe (HS.unit_tycon ()) specType' rr)
     rl)] []
-  ) hvl
+  ) vl
   where
-  hn = identifier scope toUpper n
-  hn' = mapHead toLower hn
-  hvl = map (memberIdentifier toUpper hn . versionIdentifier &&& id) vl
   tt [] = HS.unit_tycon ()
-  tt [t] = t
+  tt [a] = a
   tt l = HS.TyTuple () HS.Boxed l
 
 hasProgramDefinition :: Specification -> Bool
 hasProgramDefinition = any isProgramDefinition where
-  isProgramDefinition (Definition _ (Program _ _)) = True
+  isProgramDefinition (Definition _ Program{}) = True
   isProgramDefinition _ = False
 
-generate :: XDR.Scope -> String -> Specification -> HS.Module ()
-generate s n l = HS.Module ()
+generate :: String -> Specification -> HS.Module ()
+generate n l = HS.Module ()
   (Just $ HS.ModuleHead () (HS.ModuleName () n) Nothing Nothing)
   [ HS.LanguagePragma () $ map HS.name ["DataKinds", "MultiParamTypeClasses", "TypeSynonymInstances"] ]
   ([HS.ImportDecl () (HS.ModuleName () "Prelude") True False False Nothing Nothing Nothing
@@ -282,12 +242,12 @@ generate s n l = HS.Module ()
   ] ++ if hasProgramDefinition l then
   [ HS.ImportDecl () (HS.ModuleName () "Network.ONCRPC.Types") True False False Nothing (Just $ HS.ModuleName () "RPC") Nothing ]
   else [])
-  $ concatMap (definition $ makeScope s) l
+  $ concatMap definition l
 
-generateFromFile :: FilePath -> String -> IO String
-generateFromFile f m = do
+generateFromFile :: ReidentOptions -> FilePath -> String -> IO String
+generateFromFile opts f m = do
   (d, s) <- either (fail . show) return =<< XDR.parseFile f
-  let h = generate s m d
+  let h = generate m $ reident opts s d
   return $ "-- Generated from " ++ f ++ " by oncrpc/hsxdrgen\n"
     ++ prettyPrintWithMode defaultMode
       { classIndent = 2

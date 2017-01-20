@@ -6,9 +6,6 @@ module Data.XDR.Specification
 import qualified Data.XDR.Types as XDR
 import qualified Network.ONCRPC.Types as RPC
 
-newtype Identifier = Identifier{ identifierString :: String }
-  deriving (Show, Eq, Ord)
-
 data ArrayLength
   = FixedLength    { arrayLength :: !XDR.Length }
   | VariableLength { arrayLength :: !XDR.Length -- ^defaulted to maxLength
@@ -44,51 +41,51 @@ data TypeSpecifier
   | TypeEnum !EnumBody
   | TypeStruct !StructBody
   | TypeUnion !UnionBody
-  | TypeIdentifier !Identifier
+  | TypeIdentifier !String
 
 -- |Non-void declaration
 data Declaration = Declaration
-  { declarationIdentifier :: !Identifier
+  { declarationIdentifier :: !String
   , declarationType :: TypeDescriptor
   }
 
 -- |'Declaration' or void
 type OptionalDeclaration = Maybe Declaration
 
-type EnumValues = [(Identifier, XDR.Int)]
+type EnumValues = [(String, XDR.Int)]
 
 newtype EnumBody = EnumBody
   { enumValues :: EnumValues
   }
 
 boolValues :: EnumValues
-boolValues = [(Identifier "FALSE", 0), (Identifier "TRUE", 1)]
+boolValues = [("FALSE", 0), ("TRUE", 1)]
 
 newtype StructBody = StructBody
   { structMembers :: [Declaration] -- ^with voids elided
   }
 
 data UnionArm = UnionArm
-  { unionCase :: !XDR.Int
-  , unionCaseLiteral :: String -- ^The literal string found after "case", for labeling
+  { unionCaseIdentifier :: String -- ^The literal string found after "case", for labeling
   , unionDeclaration :: OptionalDeclaration
   }
 
 data UnionBody = UnionBody
   { unionDiscriminant :: !Declaration
-  , unionArms :: [UnionArm]
-  , unionDefault :: Maybe OptionalDeclaration
+  , unionCases :: [(XDR.Int, UnionArm)]
+  , unionDefault :: Maybe UnionArm
   }
 
 data Procedure = Procedure
   { procedureRes :: Maybe TypeSpecifier
-  , procedureIdentifier :: !Identifier
+  , procedureIdentifier :: !String
   , procedureArgs :: [TypeSpecifier]
   , procedureNumber :: !RPC.ProcNum
   }
 
 data Version = Version
-  { versionIdentifier :: !Identifier
+  { versionIdentifier :: !String
+  , versionTypeIdentifier :: !String
   , versionProcedures :: [Procedure]
   , versionNumber :: !RPC.VersNum
   }
@@ -97,12 +94,13 @@ data DefinitionBody
   = TypeDef TypeDescriptor
   | Constant Integer
   | Program
-    { programVersions :: [Version]
+    { programTypeIdentifier :: !String
+    , programVersions :: [Version]
     , programNumber :: !RPC.ProgNum
     }
 
 data Definition = Definition
-  { definitionIdentifier :: !Identifier
+  { definitionIdentifier :: !String
   , definitionBody :: !DefinitionBody
   }
 

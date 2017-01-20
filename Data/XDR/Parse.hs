@@ -9,7 +9,7 @@ module Data.XDR.Parse
 
 import           Control.Applicative ((<|>))
 import           Control.Arrow ((***), second)
-import           Control.Monad (void, liftM2)
+import           Control.Monad (void, join, liftM2)
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import           Data.Char (digitToInt, isLower, isUpper, toLower, toUpper)
 import           Data.Functor.Identity (Identity)
@@ -27,7 +27,7 @@ data Binding = Binding
   , bindingDefinition :: !DefinitionBody
   }
 
-type Scope = Map.Map Identifier Binding
+type Scope = Map.Map String Binding
 type Stream = BSLC.ByteString
 type Parser = P.Parsec Stream Scope
 
@@ -36,8 +36,8 @@ tupleM = liftM2 (,)
 
 baseScope :: Scope
 baseScope = Map.fromList $
-  (Identifier "bool",   Binding False $ TypeDef $ TypeSingle $ TypeEnum $ EnumBody $ boolValues)
-  : map (Identifier *** Binding False . TypeDef . TypeSingle)
+  ("bool",   Binding False $ TypeDef $ TypeSingle $ TypeEnum $ EnumBody $ boolValues)
+  : map (id *** Binding False . TypeDef . TypeSingle)
     [ ("int",       TypeInt)
     , ("unsigned",  TypeUnsignedInt)
     , ("hyper",     TypeHyper)
@@ -47,10 +47,10 @@ baseScope = Map.fromList $
     ]
   ++ map (second $ Binding False . Constant . toInteger) boolValues
 
-toggleCase :: Identifier -> Identifier
-toggleCase (Identifier (c:s))
-  | isUpper c = Identifier $ toLower c:s
-  | isLower c = Identifier $ toUpper c:s
+toggleCase :: String -> String
+toggleCase (c:s)
+  | isUpper c = toLower c:s
+  | isLower c = toUpper c:s
 toggleCase s = s
 
 addScope :: Definition -> Parser ()
@@ -70,7 +70,7 @@ checkInt n
   where n' = fromInteger n
 
 data Value
-  = ValueIdentifier !Identifier
+  = ValueIdentifier !String
   | ValueConstant !Integer
   deriving (Show)
 
@@ -134,8 +134,8 @@ token = PT.makeTokenParser PT.LanguageDef
 reserved :: String -> Parser ()
 reserved = PT.reserved token
 
-identifier :: Parser Identifier
-identifier = Identifier <$> PT.identifier token
+identifier :: Parser String
+identifier = PT.identifier token
 
 endSemi1 :: Parser a -> Parser [a]
 endSemi1 p = p `P.endBy1` PT.semi token
@@ -246,8 +246,8 @@ unionBody = do
       optionalDeclaration)
     _ <- checkUnique "union member" $ mapMaybe (fmap declarationIdentifier . snd) l
     _ <- checkUnique "union case" $ map snd . fst =<< l
-    f <- P.optionMaybe $ reserved "default" *> PT.colon token *> optionalDeclaration <* PT.semi token
-    return $ UnionBody d [ UnionArm c s b | (cs, b) <- l, (s, c) <- cs ] f
+    f <- P.optionMaybe $ UnionArm "default" <$> (reserved "default" *> PT.colon token *> optionalDeclaration <* PT.semi token)
+    return $ UnionBody d [ (c, UnionArm s b) | (cs, b) <- l, (s, c) <- cs ] f
   where
   valid l n
     | any ((n ==) . snd) l = return n
@@ -266,7 +266,7 @@ procedure = Procedure
     <|> Nothing <$ reserved "void"
 
 programVersion :: Parser Version
-programVersion = Version
+programVersion = join Version
   <$> (reserved "version" *> identifier)
   <*> PT.braces token (endSemi1 procedure)
   <*> (PT.symbol token "=" *> value)
@@ -282,9 +282,10 @@ def = constantDef <|> typeDef <|> programDef where
     <|> Definition <$> (reserved "struct" *> identifier) <*> (TypeDef . TypeSingle . TypeStruct <$> structBody)
     <|> Definition <$> (reserved "union"  *> identifier) <*> (TypeDef . TypeSingle . TypeUnion  <$> unionBody)
   declDef (Declaration i t) = Definition i $ TypeDef t
-  programDef = Definition
-    <$> (reserved "program" *> identifier)
-    <*> (Program
+  programDef = do
+    reserved "program"
+    i <- identifier
+    Definition i <$> (Program i
       <$> PT.braces token (endSemi1 programVersion)
       <*> (PT.symbol token "=" *> value))
 
