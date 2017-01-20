@@ -1,5 +1,4 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 module Network.ONCRPC.Client
   ( newClient
   , rpcCall
@@ -63,13 +62,13 @@ newClient sock = do
     }
   return c
 
-rpcCall :: forall a r . (XDR.XDR a, XDR.XDR r) => Client -> Call a -> IO (Reply r)
+rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO (Reply r)
 rpcCall cv a = do
   rv <- newEmptyMVar
   modifyMVar_ cv $ \s -> do
     let x = stateXID s
         q = Request
-          { requestBody = XDR.xdrSerializeLazy (MsgCall x a :: Msg a r)
+          { requestBody = XDR.xdrSerializeLazy $ MsgCall x a
           , requestAction = rv
           }
         (p, r) = IntMap.insertLookupWithKey (const const) (fromIntegral x) q (stateRequests s)

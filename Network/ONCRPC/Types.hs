@@ -58,42 +58,42 @@ instance XDR.XDR Auth where
   xdrGet = unopacifyAuth <$> xdrGet
 
 -- |'RPC.Call_body' with parameters
-data Call a = Call
-  { callProg :: !ProgNum
-  , callVers :: !VersNum
-  , callProc :: !ProcNum
+data Call a r = Call
+  { callProcedure :: !(Procedure a r)
   , callCred :: !Auth
   , callVerf :: !Auth
   , callArgs :: a
   }
 
-splitCall :: Call a -> (RPC.Call_body, a)
-splitCall Call{..} =
+splitCall :: Call a r -> (RPC.Call_body, a)
+splitCall Call{ callProcedure = Procedure{..}, ..} =
   ( RPC.Call_body
     { RPC.call_body'rpcvers = RPC.rPC_VERS
-    , RPC.call_body'prog = callProg
-    , RPC.call_body'vers = callVers
-    , RPC.call_body'proc = callProc
+    , RPC.call_body'prog = procedureProg
+    , RPC.call_body'vers = procedureVers
+    , RPC.call_body'proc = procedureProc
     , RPC.call_body'cred = opacifyAuth callCred
     , RPC.call_body'verf = opacifyAuth callVerf
     }
   , callArgs
   )
 
-getCall :: XDR.XDR a => RPC.Call_body -> S.Get (Call a)
+getCall :: XDR.XDR a => RPC.Call_body -> S.Get (Call a r)
 getCall RPC.Call_body{..} = do
   guard $ call_body'rpcvers == RPC.rPC_VERS
   a <- xdrGet
   return Call
-    { callProg = call_body'prog
-    , callVers = call_body'vers
-    , callProc = call_body'proc
+    { callProcedure = Procedure
+      { procedureProg = call_body'prog
+      , procedureVers = call_body'vers
+      , procedureProc = call_body'proc
+      }
     , callCred = unopacifyAuth call_body'cred
     , callVerf = unopacifyAuth call_body'verf
     , callArgs = a
     }
 
-instance XDR.XDR a => XDR.XDR (Call a) where
+instance XDR.XDR a => XDR.XDR (Call a r) where
   xdrType _ = "call_body_args"
   xdrPut = xdrPut . splitCall
   xdrGet = getCall =<< xdrGet
@@ -151,7 +151,7 @@ instance XDR.XDR a => XDR.XDR (Reply a) where
 data Msg a r
   = MsgCall
     { msgXID :: XID
-    , msgCall :: Call a
+    , msgCall :: Call a r
     }
   | MsgReply
     { msgXID :: XID
