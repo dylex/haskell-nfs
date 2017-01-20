@@ -111,7 +111,7 @@ data Reply a
   | ReplyRejected
     { replyRejected :: !RPC.Rejected_reply
     }
-  | ReplyFail -- ^Missing/corrupt response
+  | ReplyFail String -- ^Missing/corrupt response
 
 splitReply :: Reply a -> (RPC.Reply_body, Maybe a)
 splitReply (Reply v r) = 
@@ -128,7 +128,7 @@ splitReply (ReplyRejected r) =
   ( RPC.Reply_body'MSG_DENIED r
   , Nothing
   )
-splitReply ReplyFail = (error "splitReply ReplyFail", Nothing)
+splitReply (ReplyFail e) = (error $ "splitReply ReplyFail: " ++ e, Nothing)
 
 getReply :: XDR.XDR a => RPC.Reply_body -> S.Get (Reply a)
 getReply (RPC.Reply_body'MSG_ACCEPTED (RPC.Accepted_reply v d@RPC.Accepted_reply_data'SUCCESS)) =
@@ -140,7 +140,7 @@ getReply (RPC.Reply_body'MSG_DENIED r) =
 
 instance XDR.XDR a => XDR.XDR (Reply a) where
   xdrType _ = "reply_body_result"
-  xdrPut ReplyFail = return ()
+  xdrPut (ReplyFail e) = fail e
   xdrPut r = do
     xdrPut b
     mapM_ xdrPut a

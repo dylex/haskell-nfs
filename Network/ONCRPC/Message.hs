@@ -49,7 +49,7 @@ data RecvState a
     { recvState :: RecordState
     }
 
-recvGet :: Net.Socket -> S.Get a -> MessageState -> IO (Maybe (Maybe a, MessageState))
+recvGet :: Net.Socket -> S.Get a -> MessageState -> IO (Maybe (Either String a, MessageState))
 recvGet sock getter = start where
   start (MessageState rs b)
     | BS.null b = get $ RecvStart rs
@@ -63,5 +63,5 @@ recvGet sock getter = start where
   got (RecvGet _ f) b rs = fed rs $ f b
   got (RecvIgnore _) _ rs = get $ RecvIgnore rs
   fed rs (S.Partial f) = get $ RecvGet rs f
-  fed rs (S.Done r b) = return $ Just (Just r, MessageState rs b)
-  fed rs _ = return $ Just (Nothing, MessageIgnore rs) -- XXX close connection?
+  fed rs (S.Done r b) = return $ Just (Right r, MessageState rs b)
+  fed rs (S.Fail e _) = return $ Just (Left e, MessageIgnore rs)

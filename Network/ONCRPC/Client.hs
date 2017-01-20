@@ -8,7 +8,6 @@ import           Control.Concurrent (ThreadId, forkIO)
 import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, modifyMVar_, modifyMVarMasked)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.IntMap.Strict as IntMap
-import           Data.Maybe (fromMaybe)
 import qualified Network.Socket as Net
 import           System.IO.Error (ioError, mkIOError, eofErrorType)
 import           System.Random (randomIO)
@@ -36,7 +35,7 @@ clientThread :: Client -> Net.Socket -> IO ()
 clientThread cv sock = next initMessageState where
   next ms =
     maybe closed msg =<< recvGet sock XDR.xdrGet ms
-  msg (Just (RPC.Rpc_msg x (RPC.Rpc_msg_body'REPLY b)), ms) = do
+  msg (Right (RPC.Rpc_msg x (RPC.Rpc_msg_body'REPLY b)), ms) = do
     q <- modifyMVarMasked cv $ \s@State{ stateRequests = m } -> do
       let (q, m') = IntMap.updateLookupWithKey (const $ const Nothing) (fromIntegral x) m
       return (s{ stateRequests = m' }, q)
@@ -44,7 +43,7 @@ clientThread cv sock = next initMessageState where
       Nothing -> next $ messageIgnore ms
       Just (Request _ a) -> do
         (r, ms') <- maybe closed return =<< recvGet sock (getReply b) ms
-        putMVar a $ fromMaybe ReplyFail r
+        putMVar a $ either ReplyFail id r
         next $ ms'
   msg (_, ms) = next $ messageIgnore ms
   closed = ioError $ mkIOError eofErrorType "ONCRPC.Client: socket closed" Nothing Nothing
@@ -74,7 +73,7 @@ rpcCall cv a = do
         (p, r) = IntMap.insertLookupWithKey (const const) (fromIntegral x) q (stateRequests s)
     case p of
       Nothing -> return ()
-      Just (Request _ v) -> putMVar v ReplyFail -- should only happen on xid wraparound
+      Just (Request _ v) -> putMVar v (ReplyFail "no response") -- should only happen on xid wraparound
     sendMessage (stateSocket s) $ requestBody q
     return s{ stateRequests = r, stateXID = x+1 }
   takeMVar rv
