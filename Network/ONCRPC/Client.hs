@@ -25,10 +25,10 @@ import           Network.ONCRPC.Message
 
 -- |How to connect to an RPC server
 data ClientServer
-  = ClientServerPort -- ^a known service by host/port
+  = ClientServerPort
     { clientServerHost :: Net.HostName
     , clientServerPort :: Net.ServiceName
-    }
+    } -- ^a known service by host/port
 
 data Request = forall a . XDR.XDR a => Request
   { requestBody :: BSL.ByteString -- ^for retransmits

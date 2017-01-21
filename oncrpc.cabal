@@ -21,14 +21,15 @@ source-repository head
 
 library
   exposed-modules:
-    Network.ONCRPC.XDR
     Network.ONCRPC.XDR.Array
     Network.ONCRPC.XDR.Types
     Network.ONCRPC.XDR.Serial
     Network.ONCRPC.XDR.Generate
+    Network.ONCRPC.XDR
     Network.ONCRPC.Types
     Network.ONCRPC.Prot
     Network.ONCRPC.Client
+    Network.ONCRPC
   other-modules:
     Network.Socket.All
     Network.ONCRPC.XDR.Specification
