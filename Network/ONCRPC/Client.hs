@@ -9,6 +9,7 @@ import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar,
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.IntMap.Strict as IntMap
 import qualified Network.Socket as Net
+import           System.IO (hPutStrLn, stderr)
 import           System.IO.Error (ioError, mkIOError, eofErrorType)
 import           System.Random (randomIO)
 
@@ -31,21 +32,28 @@ data State = State
 
 type Client = MVar State
 
+warn :: String -> IO ()
+warn = hPutStrLn stderr
+
 clientThread :: Client -> Net.Socket -> IO ()
-clientThread cv sock = next initMessageState where
-  next ms =
-    maybe closed msg =<< recvGet sock XDR.xdrGet ms
+clientThread cv sock = next messageStart where
+  next ms = do
+    maybe closed msg =<< recvGetFirst sock XDR.xdrGet ms
   msg (Right (RPC.Rpc_msg x (RPC.Rpc_msg_body'REPLY b)), ms) = do
     q <- modifyMVarMasked cv $ \s@State{ stateRequests = m } -> do
       let (q, m') = IntMap.updateLookupWithKey (const $ const Nothing) (fromIntegral x) m
       return (s{ stateRequests = m' }, q)
     case q of
-      Nothing -> next $ messageIgnore ms
+      Nothing -> do
+        warn $ "Response to unknown xid " ++ show x
+        next ms
       Just (Request _ a) -> do
-        (r, ms') <- maybe closed return =<< recvGet sock (getReply b) ms
+        (r, ms') <- maybe closed return =<< recvGetNext sock (getReply b) ms
         putMVar a $ either ReplyFail id r
         next $ ms'
-  msg (_, ms) = next $ messageIgnore ms
+  msg (e, ms) = do
+    warn $ "Couldn't decode reply msg: " ++ show e
+    next ms
   closed = ioError $ mkIOError eofErrorType "ONCRPC.Client: socket closed" Nothing Nothing
 
 newClient :: Net.Socket -> IO Client

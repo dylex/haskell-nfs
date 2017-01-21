@@ -2,9 +2,9 @@ module Network.ONCRPC.Message
   ( sendMessage
   , recvMessage
   , MessageState
-  , initMessageState
-  , messageIgnore
-  , recvGet
+  , messageStart
+  , recvGetFirst
+  , recvGetNext
   ) where
 
 import qualified Data.ByteString as BS
@@ -22,46 +22,42 @@ recvMessage :: Net.Socket -> RecordState -> IO (BS.ByteString, RecordState)
 recvMessage sock@(Net.MkSocket _ _ Net.Stream _ _) = recvRecord sock
 recvMessage _ = const $ fail "ONCRPC: Unsupported socket type"
 
-data MessageState
-  = MessageState
-    { recordState :: RecordState
-    , _bufferState :: BS.ByteString
-    }
-  | MessageIgnore
-    { recordState :: RecordState
-    }
+data MessageState = MessageState
+  { _bufferState :: BS.ByteString
+  , recordState :: RecordState
+  }
+  deriving (Eq, Show)
 
-initMessageState :: MessageState
-initMessageState = MessageState RecordStart BS.empty
+messageNext :: RecordState -> MessageState
+messageNext = MessageState BS.empty
 
-messageIgnore :: MessageState -> MessageState
-messageIgnore = MessageIgnore . recordState
+messageStart :: MessageState
+messageStart = messageNext RecordStart
 
-data RecvState a
-  = RecvStart
-    { recvState :: RecordState
-    }
-  | RecvGet
-    { recvState :: RecordState
-    , _recvGetter :: BS.ByteString -> S.Result a
-    }
-  | RecvIgnore
-    { recvState :: RecordState
-    }
+recvMessageWith :: Net.Socket -> RecordState -> (BS.ByteString -> RecordState -> IO (Maybe a)) -> IO (Maybe a)
+recvMessageWith sock rs f = do
+  (b, rs') <- recvMessage sock rs
+  if BS.null b
+    then return Nothing
+    else f b rs'
 
-recvGet :: Net.Socket -> S.Get a -> MessageState -> IO (Maybe (Either String a, MessageState))
-recvGet sock getter = start where
-  start (MessageState rs b)
-    | BS.null b = get $ RecvStart rs
-    | otherwise = got (RecvStart rs) b rs
-  start (MessageIgnore rs) = get $ RecvIgnore rs
-  get (RecvGet RecordStart f) = fed RecordStart $ f BS.empty
-  get (RecvIgnore RecordStart) = get $ RecvStart RecordStart
-  get s = uncurry (got s) =<< recvMessage sock (recvState s)
-  got _ b _ | BS.null b = return Nothing
-  got (RecvStart _) b rs = fed rs $ S.runGetChunk getter (recordRemaining rs) b
-  got (RecvGet _ f) b rs = fed rs $ f b
-  got (RecvIgnore _) _ rs = get $ RecvIgnore rs
-  fed rs (S.Partial f) = get $ RecvGet rs f
-  fed rs (S.Done r b) = return $ Just (Right r, MessageState rs b)
-  fed rs (S.Fail e _) = return $ Just (Left e, MessageIgnore rs)
+-- |Get the next part of the current record, after calling 'recvGetFirst' to start.
+recvGetNext :: Net.Socket -> S.Get a -> MessageState -> IO (Maybe (Either String a, MessageState))
+recvGetNext sock getter = start where
+  start (MessageState b rs) -- continue record
+    | BS.null b = get Nothing rs -- check for more
+    | otherwise = got Nothing b rs -- buffered data
+  get f RecordStart = got f BS.empty RecordStart -- end of record
+  get f rs = recvMessageWith sock rs $ got f -- read next block
+  got Nothing b rs = fed rs $ S.runGetChunk getter (recordRemaining rs) b -- start parsing
+  got (Just f) b rs = fed rs $ f b -- parse block
+  fed rs (S.Partial f) = get (Just f) rs
+  fed rs (S.Done r b) = return $ Just (Right r, MessageState b rs)
+  fed rs (S.Fail e b) = return $ Just (Left e, MessageState b rs)
+
+-- |Get the first part of the next record, possibly skipping over the rest of the current record.
+recvGetFirst :: Net.Socket -> S.Get a -> MessageState -> IO (Maybe (Either String a, MessageState))
+recvGetFirst sock getter = get . recordState where
+  get rs = recvMessageWith sock rs $ got rs -- read next block
+  got RecordStart b rs = recvGetNext sock getter $ MessageState b rs -- start next record
+  got _ _ rs = get rs -- ignore remaining record

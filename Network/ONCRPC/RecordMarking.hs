@@ -51,6 +51,7 @@ data RecordState
     { _fragmentLast :: !Bool
     , _fragmentLength :: !Int
     }
+  deriving (Eq, Show)
 
 -- |Is the current record complete?
 recordDone :: RecordState -> Bool

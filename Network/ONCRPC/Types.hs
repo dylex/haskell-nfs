@@ -34,12 +34,14 @@ data Procedure a r = Procedure
   , procedureVers :: !VersNum
   , procedureProc :: !ProcNum
   }
+  deriving (Eq, Show)
 
 -- |More translucent version of 'RPC.Opaque_auth' union (not expressible in XDR)
 data Auth
   = AuthNone
   | AuthSys !RPC.Authsys_parms
   | AuthOpaque !RPC.Opaque_auth
+  deriving (Eq, Show)
 
 opacifyAuth :: Auth -> RPC.Opaque_auth
 opacifyAuth AuthNone    = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_NONE) $ emptyBoundedLengthArray
@@ -64,6 +66,7 @@ data Call a r = Call
   , callVerf :: !Auth
   , callArgs :: a
   }
+  deriving (Show)
 
 splitCall :: Call a r -> (RPC.Call_body, a)
 splitCall Call{ callProcedure = Procedure{..}, ..} =
@@ -112,6 +115,7 @@ data Reply a
     { replyRejected :: !RPC.Rejected_reply
     }
   | ReplyFail String -- ^Missing/corrupt response
+  deriving (Show)
 
 splitReply :: Reply a -> (RPC.Reply_body, Maybe a)
 splitReply (Reply v r) = 
@@ -157,6 +161,7 @@ data Msg a r
     { msgXID :: XID
     , msgReply :: Reply r
     }
+  deriving (Show)
 
 instance (XDR.XDR a, XDR.XDR r) => XDR.XDR (Msg a r) where
   xdrType _ = "rpc_msg_content"
