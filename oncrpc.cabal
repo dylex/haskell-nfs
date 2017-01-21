@@ -22,18 +22,20 @@ source-repository head
 library
   exposed-modules:
     Data.XDR
+    Data.XDR.Array
     Data.XDR.Types
-    Data.XDR.Specification
-    Data.XDR.Parse
     Data.XDR.Serial
     Data.XDR.Generate
     Network.ONCRPC.Types
     Network.ONCRPC.Prot
-    Network.ONCRPC.RecordMarking
-    Network.ONCRPC.Message
     Network.ONCRPC.Client
   other-modules:
+    Data.XDR.Specification
+    Data.XDR.Parse
+    Data.XDR.Reident
     Network.Socket.All
+    Network.ONCRPC.RecordMarking
+    Network.ONCRPC.Message
   build-depends:       
     base >=4.8 && <5,
     bytestring,
@@ -42,8 +44,7 @@ library
     haskell-src-exts >= 1.18,
     network >= 2.6.3,
     parsec,
-    random,
-    sext
+    random
   default-language: Haskell2010
   ghc-options: -Wall
 
@@ -57,7 +58,6 @@ executable hsxdrgen
     haskell-src-exts >= 1.18,
     network >= 2.6.3,
     parsec,
-    sext,
     oncrpc
   default-language: Haskell2010
   ghc-options: -Wall

@@ -1,5 +1,6 @@
 -- |XDR Serialization
 
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -28,10 +29,11 @@ import           Data.Functor.Identity (runIdentity)
 import           Data.Maybe (fromJust, isJust)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Serialize as S
-import qualified Data.Sext as Sext
 import qualified Data.XDR.Types as XDR
 -- import qualified Data.XDR.Specification as XDR
 import           GHC.TypeLits (KnownNat, natVal)
+
+import           Data.XDR.Array
 
 -- |An XDR type that can be (de)serialized.
 class XDR a where
@@ -131,9 +133,6 @@ instance XDR a => XDRUnion (XDR.Optional a) where
   xdrGetUnionArm 1 = Just <$> xdrGet
   xdrGetUnionArm _ = fail $ "xdrGetUnion: invalid discriminant for " ++ xdrType (undefined :: XDR.Optional a)
 
-bsLength :: BS.ByteString -> XDR.Length
-bsLength = fromIntegral . BS.length
-
 xdrPutPad :: XDR.Length -> S.Put
 xdrPutPad n = case n `mod` 4 of
   0 -> return ()
@@ -155,19 +154,14 @@ xdrGetPad n = case n `mod` 4 of
     0 <- S.getWord8
     return ()
 
+bsLength :: BS.ByteString -> XDR.Length
+bsLength = fromIntegral . BS.length
+
 xdrPutByteString :: XDR.Length -> BS.ByteString -> S.Put
 xdrPutByteString l b = do
   unless (bsLength b == l) $ fail "xdrPutByteString: incorrect length"
   S.putByteString b
   xdrPutPad l
-
-xdrPutByteStringLen :: XDR.Length -> BS.ByteString -> S.Put
-xdrPutByteStringLen m b = do
-  xdrPut l
-  xdrPutByteString l b'
-  where 
-  b' = BS.take (fromIntegral m) b
-  l = bsLength b'
 
 xdrGetByteString :: XDR.Length -> S.Get BS.ByteString
 xdrGetByteString l = do
@@ -175,67 +169,55 @@ xdrGetByteString l = do
   xdrGetPad l
   return b
 
-xdrGetByteStringLen :: XDR.Length -> S.Get BS.ByteString
-xdrGetByteStringLen m = do
-  l <- xdrGet
-  guard $ l <= m
-  xdrGetByteString l
+fixedLength :: forall n a . KnownNat n => LengthArray 'EQ n a -> String -> String
+fixedLength a = (++ ('[' : show (fixedLengthArrayLength a) ++ "]"))
 
-fixedLength :: KnownNat n => p n -> String -> String
-fixedLength p = (++ ('[' : show (natVal p) ++ "]"))
-
-variableLength :: KnownNat n => p n -> String -> String
-variableLength p
+variableLength :: forall n a . KnownNat n => LengthArray 'LT n a -> String -> String
+variableLength a
   | n == XDR.maxLength = (++ "<>")
   | otherwise = (++ ('<' : show n ++ ">"))
-  where n = fromIntegral $ natVal p
+  where n = fromIntegral $ boundedLengthArrayBound a
 
-instance (KnownNat n, XDR a) => XDR (XDR.FixedArray n a) where
-  xdrType = (fixedLength (Proxy :: Proxy n)) . xdrType . head . Sext.unwrap
-  xdrPut a = do
-    -- unless (length a' == fromInteger (natVal (Proxy :: Proxy n))) $ fail "xdrPutFixedArray: incorrect length"
-    mapM_ xdrPut a'
+xdrGetBoundedArray :: forall n a . KnownNat n => (XDR.Length -> S.Get a) -> S.Get (LengthArray 'LT n a)
+xdrGetBoundedArray g = do
+  l <- xdrGet
+  guard $ l <= fromIntegral (boundedLengthArrayBound (undefined :: LengthArray 'LT n a))
+  unsafeLengthArray <$> g l
+
+instance (KnownNat n, XDR a) => XDR (LengthArray 'EQ n [a]) where
+  xdrType la = fixedLength la $ xdrType $ head $ unLengthArray la
+  xdrPut la = do
+    mapM_ xdrPut a
     where
-    a' = Sext.unwrap a
-  xdrGet = Sext.unsafeCreate <$>
+    a = unLengthArray la
+  xdrGet = unsafeLengthArray <$>
     replicateM (fromInteger (natVal (Proxy :: Proxy n))) xdrGet
 
-instance (KnownNat n, XDR a) => XDR (XDR.Array n a) where
-  xdrType (XDR.Array l) = variableLength (Proxy :: Proxy n) $ xdrType $ head l
-  xdrPut (XDR.Array a) = do
-    xdrPut (l :: XDR.Length)
-    mapM_ xdrPut a'
+instance (KnownNat n, XDR a) => XDR (LengthArray 'LT n [a]) where
+  xdrType la = variableLength la $ xdrType $ head $ unLengthArray la
+  xdrPut la = do
+    xdrPut (fromIntegral (length a) :: XDR.Length)
+    mapM_ xdrPut a
     where
-    m = fromInteger $ natVal (Proxy :: Proxy n)
-    a' = take m a
-    l = fromIntegral $ length a'
-  xdrGet = XDR.Array <$> do
-    l <- xdrGet :: S.Get XDR.Length
-    guard $ l <= m
-    replicateM (fromIntegral l) xdrGet
-    where
-    m = fromInteger $ natVal (Proxy :: Proxy n)
+    a = unLengthArray la
+  xdrGet = xdrGetBoundedArray $ \l -> replicateM (fromIntegral l) xdrGet
 
-instance KnownNat n => XDR (XDR.FixedOpaque n) where
-  xdrType _ = fixedLength (Proxy :: Proxy n) "opaque"
+instance KnownNat n => XDR (LengthArray 'EQ n BS.ByteString) where
+  xdrType o = fixedLength o "opaque"
   xdrPut o =
-    xdrPutByteString (fromInteger $ natVal (Proxy :: Proxy n)) $ Sext.unwrap o
-  xdrGet = Sext.unsafeCreate <$>
+    xdrPutByteString (fromInteger $ natVal (Proxy :: Proxy n)) $ unLengthArray o
+  xdrGet = unsafeLengthArray <$>
     xdrGetByteString (fromInteger $ natVal (Proxy :: Proxy n))
 
-instance KnownNat n => XDR (XDR.Opaque n) where
+instance KnownNat n => XDR (LengthArray 'LT n BS.ByteString) where
   xdrType o = variableLength o "opaque"
-  xdrPut o@(XDR.Opaque b) =
-    xdrPutByteString (fromInteger $ natVal o) b
-  xdrGet = XDR.Opaque <$>
-    xdrGetByteStringLen (fromInteger $ natVal (Proxy :: Proxy n))
-
-instance KnownNat n => XDR (XDR.String n) where
-  xdrType o = variableLength o "string"
-  xdrPut s@(XDR.String b) =
-    xdrPutByteStringLen (fromInteger $ natVal s) b
-  xdrGet = XDR.String <$>
-    xdrGetByteStringLen (fromInteger $ natVal (Proxy :: Proxy n))
+  xdrPut o = do
+    xdrPut l
+    xdrPutByteString l b
+    where 
+    l = bsLength b
+    b = unLengthArray o
+  xdrGet = xdrGetBoundedArray xdrGetByteString
 
 instance XDR () where
   xdrType () = "void"

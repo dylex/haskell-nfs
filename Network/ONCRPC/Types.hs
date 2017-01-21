@@ -15,11 +15,11 @@ module Network.ONCRPC.Types
 
 import           Control.Applicative ((<|>))
 import           Control.Monad (guard)
-import qualified Data.ByteString as BS
 import qualified Data.Serialize as S
 import           Data.Word (Word32)
 
 import qualified Data.XDR as XDR
+import           Data.XDR.Array
 import           Data.XDR.Serial
 import qualified Network.ONCRPC.Prot as RPC
 
@@ -42,14 +42,14 @@ data Auth
   | AuthOpaque !RPC.Opaque_auth
 
 opacifyAuth :: Auth -> RPC.Opaque_auth
-opacifyAuth AuthNone    = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_NONE) $ XDR.Opaque BS.empty
-opacifyAuth (AuthSys s) = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_SYS)  $ XDR.Opaque $ xdrSerialize s
+opacifyAuth AuthNone    = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_NONE) $ emptyBoundedLengthArray
+opacifyAuth (AuthSys s) = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_SYS)  $ lengthArray' $ xdrSerialize s
 opacifyAuth (AuthOpaque o) = o
 
 unopacifyAuth :: RPC.Opaque_auth -> Auth
 unopacifyAuth o@(RPC.Opaque_auth n b) = case xdrToEnum n of
   Just RPC.AUTH_NONE -> AuthNone
-  Just RPC.AUTH_SYS | Just s <- xdrDeserialize (XDR.opaqueByteString b) -> AuthSys s
+  Just RPC.AUTH_SYS | Just s <- xdrDeserialize (unLengthArray b) -> AuthSys s
   _ -> AuthOpaque o
 
 instance XDR.XDR Auth where
