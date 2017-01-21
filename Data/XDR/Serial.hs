@@ -29,6 +29,7 @@ import           Data.Functor.Identity (runIdentity)
 import           Data.Maybe (fromJust, isJust)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Serialize as S
+import qualified Data.Vector as V
 import qualified Data.XDR.Types as XDR
 -- import qualified Data.XDR.Specification as XDR
 import           GHC.TypeLits (KnownNat, natVal)
@@ -201,6 +202,24 @@ instance (KnownNat n, XDR a) => XDR (LengthArray 'LT n [a]) where
     where
     a = unLengthArray la
   xdrGet = xdrGetBoundedArray $ \l -> replicateM (fromIntegral l) xdrGet
+
+instance (KnownNat n, XDR a) => XDR (LengthArray 'EQ n (V.Vector a)) where
+  xdrType la = fixedLength la $ xdrType $ V.head $ unLengthArray la
+  xdrPut la = do
+    mapM_ xdrPut a
+    where
+    a = unLengthArray la
+  xdrGet = unsafeLengthArray <$>
+    V.replicateM (fromInteger (natVal (Proxy :: Proxy n))) xdrGet
+
+instance (KnownNat n, XDR a) => XDR (LengthArray 'LT n (V.Vector a)) where
+  xdrType la = variableLength la $ xdrType $ V.head $ unLengthArray la
+  xdrPut la = do
+    xdrPut (fromIntegral (V.length a) :: XDR.Length)
+    mapM_ xdrPut a
+    where
+    a = unLengthArray la
+  xdrGet = xdrGetBoundedArray $ \l -> V.replicateM (fromIntegral l) xdrGet
 
 instance KnownNat n => XDR (LengthArray 'EQ n BS.ByteString) where
   xdrType o = fixedLength o "opaque"

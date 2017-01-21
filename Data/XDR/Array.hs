@@ -30,6 +30,7 @@ import           Data.Maybe (fromMaybe, fromJust)
 import           Data.Monoid (Monoid)
 import           Data.Proxy (Proxy(..))
 import           Data.String (IsString(..))
+import qualified Data.Vector as V
 import           GHC.TypeLits (Nat, KnownNat, natVal, type (+), type CmpNat)
 
 class Monoid a => Array a where
@@ -45,9 +46,12 @@ instance Array [a] where
   compareLength (_:l) n = compareLength l (n - 1)
   take = List.take
 
+instance Array (V.Vector a) where
+  length = V.length
+  take = V.take
+
 instance Array BS.ByteString where
   length = BS.length
-  compareLength = compare . length
   take = BS.take
 
 instance Array BSL.ByteString where
