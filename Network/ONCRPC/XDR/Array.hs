@@ -7,7 +7,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 -- {-# OPTIONS_GHC -Wno-redundant-constraints #-}
-module Data.XDR.Array
+module Network.ONCRPC.XDR.Array
   ( LengthArray
   , FixedLengthArray
   , fixedLengthArrayLength

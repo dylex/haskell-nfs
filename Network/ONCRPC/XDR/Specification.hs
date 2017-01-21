@@ -1,9 +1,9 @@
 -- | XDR specification, as per RFC4506 and RPC extensions from RFC5531
 
-module Data.XDR.Specification
+module Network.ONCRPC.XDR.Specification
   where
 
-import qualified Data.XDR.Types as XDR
+import qualified Network.ONCRPC.XDR.Types as XDR
 import qualified Network.ONCRPC.Types as RPC
 
 data ArrayLength

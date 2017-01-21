@@ -6,8 +6,8 @@ import           System.Environment (getProgName, getArgs)
 import           System.Exit (exitFailure)
 import           System.IO (hPutStrLn, stderr)
 
-import           Data.XDR.Generate (generateFromFile)
-import           Data.XDR.Reident
+import           Network.ONCRPC.XDR.Generate (generateFromFile)
+import           Network.ONCRPC.XDR.Reident
 
 data Opts = Opts
   { optModuleName :: String

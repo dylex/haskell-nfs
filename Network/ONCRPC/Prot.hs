@@ -4,7 +4,7 @@
 module Network.ONCRPC.Prot where
 import qualified Prelude
 import qualified Control.Applicative
-import qualified Data.XDR as XDR
+import qualified Network.ONCRPC.XDR as XDR
 
 rPC_VERS :: Prelude.Integral a => a
 rPC_VERS = 2

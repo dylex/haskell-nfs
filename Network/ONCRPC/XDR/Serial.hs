@@ -6,7 +6,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-module Data.XDR.Serial
+module Network.ONCRPC.XDR.Serial
   ( XDR(..)
   , XDREnum(..)
   , xdrToEnum'
@@ -30,11 +30,11 @@ import           Data.Maybe (fromJust, isJust)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Serialize as S
 import qualified Data.Vector as V
-import qualified Data.XDR.Types as XDR
--- import qualified Data.XDR.Specification as XDR
+import qualified Network.ONCRPC.XDR.Types as XDR
+-- import qualified Network.ONCRPC.XDR.Specification as XDR
 import           GHC.TypeLits (KnownNat, natVal)
 
-import           Data.XDR.Array
+import           Network.ONCRPC.XDR.Array
 
 -- |An XDR type that can be (de)serialized.
 class XDR a where

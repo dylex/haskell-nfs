@@ -1,7 +1,7 @@
 -- | XDR Parser for .x files, as per RFC4506 and RPC extensions from RFC5531
 
 {-# LANGUAGE TupleSections #-}
-module Data.XDR.Parse
+module Network.ONCRPC.XDR.Parse
   ( Binding(..)
   , Scope
   , parseFile
@@ -19,8 +19,8 @@ import qualified Data.Set as Set
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Token as PT
 
-import qualified Data.XDR.Types as XDR
-import           Data.XDR.Specification hiding (arrayLength)
+import qualified Network.ONCRPC.XDR.Types as XDR
+import           Network.ONCRPC.XDR.Specification hiding (arrayLength)
 
 data Binding = Binding
   { bindingInitCaseConflict :: !Bool -- ^Same name as another identifier modulo first character case

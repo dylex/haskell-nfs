@@ -1,6 +1,6 @@
 
 {-# LANGUAGE ViewPatterns #-}
-module Data.XDR.Generate
+module Network.ONCRPC.XDR.Generate
   ( generateFromFile
   ) where
 
@@ -11,10 +11,10 @@ import qualified Language.Haskell.Exts.Build as HS
 import           Language.Haskell.Exts.Pretty (prettyPrintWithMode, PPHsMode(..), defaultMode)
 import qualified Language.Haskell.Exts.Syntax as HS
 
-import qualified Data.XDR as XDR
-import           Data.XDR.Specification
-import qualified Data.XDR.Parse as XDR
-import           Data.XDR.Reident
+import qualified Network.ONCRPC.XDR as XDR
+import           Network.ONCRPC.XDR.Specification
+import qualified Network.ONCRPC.XDR.Parse as XDR
+import           Network.ONCRPC.XDR.Reident
 
 name :: String -> HS.Name ()
 name s@(~(c:_))
@@ -238,7 +238,7 @@ generate n l = HS.Module ()
   [ HS.LanguagePragma () $ map HS.name ["DataKinds", "MultiParamTypeClasses", "TypeSynonymInstances"] ]
   ([HS.ImportDecl () (HS.ModuleName () "Prelude") True False False Nothing Nothing Nothing
   , HS.ImportDecl () (HS.ModuleName () "Control.Applicative") True False False Nothing Nothing Nothing
-  , HS.ImportDecl () (HS.ModuleName () "Data.XDR") True False False Nothing (Just $ HS.ModuleName () "XDR") Nothing
+  , HS.ImportDecl () (HS.ModuleName () "Network.ONCRPC.XDR") True False False Nothing (Just $ HS.ModuleName () "XDR") Nothing
   ] ++ if hasProgramDefinition l then
   [ HS.ImportDecl () (HS.ModuleName () "Network.ONCRPC.Types") True False False Nothing (Just $ HS.ModuleName () "RPC") Nothing ]
   else [])

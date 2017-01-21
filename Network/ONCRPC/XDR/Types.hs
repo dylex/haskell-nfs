@@ -5,7 +5,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-module Data.XDR.Types
+module Network.ONCRPC.XDR.Types
   ( Int
   , UnsignedInt
   , Hyper
@@ -33,7 +33,7 @@ import           Data.Int (Int32, Int64)
 import           Data.Vector (Vector)
 import           Data.Word (Word32, Word64)
 
-import           Data.XDR.Array
+import           Network.ONCRPC.XDR.Array
 
 type Int            = Int32
 type UnsignedInt    = Word32

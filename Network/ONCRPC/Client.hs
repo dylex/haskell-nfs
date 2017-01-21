@@ -13,7 +13,7 @@ import           System.IO (hPutStrLn, stderr)
 import           System.IO.Error (ioError, mkIOError, eofErrorType)
 import           System.Random (randomIO)
 
-import qualified Data.XDR as XDR
+import qualified Network.ONCRPC.XDR as XDR
 import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
 import           Network.ONCRPC.Message

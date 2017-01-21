@@ -1,7 +1,7 @@
 -- |Convert XDR identifiers to Haskell identifiers.
 -- Rules to convert identifiers in a 'Specification' to follow Haskell's lexical rules and ensure uniqueness for Haskell's scoping.
 {-# LANGUAGE RecordWildCards #-}
-module Data.XDR.Reident
+module Network.ONCRPC.XDR.Reident
   ( ReidentOptions(..)
   , defaultReidentOptions
   , reident
@@ -12,8 +12,8 @@ import           Data.Char (isLower, isUpper, toLower, toUpper)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-import           Data.XDR.Specification
-import qualified Data.XDR.Parse as XDR
+import           Network.ONCRPC.XDR.Specification
+import qualified Network.ONCRPC.XDR.Parse as XDR
 
 data ReidentOptions = ReidentOptions
   { reidentUpperPrefix, reidentLowerPrefix :: String -- ^Prefix to use to make an identifier a different case if necessary, e.g. @\"_\"@ for lower-case, or @\"XDR_\"@ for upper case (default empty: just changes the first character, possibly resulting in names like @\"nFS_NULL\"@)

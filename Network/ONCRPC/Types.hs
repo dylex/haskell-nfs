@@ -18,9 +18,9 @@ import           Control.Monad (guard)
 import qualified Data.Serialize as S
 import           Data.Word (Word32)
 
-import qualified Data.XDR as XDR
-import           Data.XDR.Array
-import           Data.XDR.Serial
+import qualified Network.ONCRPC.XDR as XDR
+import           Network.ONCRPC.XDR.Array
+import           Network.ONCRPC.XDR.Serial
 import qualified Network.ONCRPC.Prot as RPC
 
 type XID = Word32
