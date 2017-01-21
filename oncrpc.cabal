@@ -36,6 +36,8 @@ library
     Network.ONCRPC.XDR.Reident
     Network.ONCRPC.RecordMarking
     Network.ONCRPC.Message
+  default-language: Haskell2010
+  ghc-options: -Wall
   build-depends:       
     base >=4.8 && <5,
     bytestring,
@@ -46,20 +48,12 @@ library
     parsec,
     random,
     vector
+
+executable hsrpcgen
+  hs-source-dirs: tools
+  main-is: hsrpcgen.hs
   default-language: Haskell2010
   ghc-options: -Wall
-
-executable hsxdrgen
-  main-is: hsxdrgen.hs
   build-depends:
     base >=4.8 && <5,
-    bytestring,
-    cereal >=0.5.4,
-    containers,
-    haskell-src-exts >= 1.18,
-    network >= 2.6.3,
-    parsec,
-    vector,
     oncrpc
-  default-language: Haskell2010
-  ghc-options: -Wall

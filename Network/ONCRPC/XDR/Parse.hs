@@ -4,13 +4,13 @@
 module Network.ONCRPC.XDR.Parse
   ( Binding(..)
   , Scope
-  , parseFile
+  , parse
   ) where
 
 import           Control.Applicative ((<|>))
 import           Control.Arrow ((***), second)
 import           Control.Monad (void, join, liftM2)
-import qualified Data.ByteString.Lazy.Char8 as BSLC
+import qualified Data.ByteString.Lazy as BSL
 import           Data.Char (digitToInt, isLower, isUpper, toLower, toUpper)
 import           Data.Functor.Identity (Identity)
 import qualified Data.Map as Map
@@ -28,7 +28,7 @@ data Binding = Binding
   }
 
 type Scope = Map.Map String Binding
-type Stream = BSLC.ByteString
+type Stream = BSL.ByteString
 type Parser = P.Parsec Stream Scope
 
 tupleM :: Monad m => m a -> m b -> m (a, b)
@@ -301,5 +301,5 @@ specification = endSemi1 definition
 file :: Parser (Specification, Scope)
 file = PT.whiteSpace token *> tupleM specification P.getState <* P.eof
 
-parseFile :: FilePath -> IO (Either P.ParseError (Specification, Scope))
-parseFile f = P.runParser file baseScope f <$> BSLC.readFile f
+parse :: String -> BSL.ByteString -> Either P.ParseError (Specification, Scope)
+parse = P.runParser file baseScope

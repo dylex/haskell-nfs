@@ -1,10 +1,16 @@
 
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.XDR.Generate
   ( generateFromFile
+  , generate
+  , generateModule
+  , ReidentOptions(..)
+  , GenerateOptions(..)
+  , defaultReidentOptions
   ) where
 
 import           Control.Arrow ((***), (&&&))
+import qualified Data.ByteString.Lazy.Char8 as BSLC
 import           Data.Char (isAlpha, isUpper)
 import           Data.Maybe (fromMaybe, maybeToList)
 import qualified Language.Haskell.Exts.Build as HS
@@ -232,8 +238,8 @@ hasProgramDefinition = any isProgramDefinition where
   isProgramDefinition (Definition _ Program{}) = True
   isProgramDefinition _ = False
 
-generate :: String -> Specification -> HS.Module ()
-generate n l = HS.Module ()
+specification :: String -> Specification -> HS.Module ()
+specification n l = HS.Module ()
   (Just $ HS.ModuleHead () (HS.ModuleName () n) Nothing Nothing)
   [ HS.LanguagePragma () $ map HS.name ["DataKinds", "MultiParamTypeClasses", "TypeSynonymInstances"] ]
   ([HS.ImportDecl () (HS.ModuleName () "Prelude") True False False Nothing Nothing Nothing
@@ -244,17 +250,34 @@ generate n l = HS.Module ()
   else [])
   $ concatMap definition l
 
-generateFromFile :: ReidentOptions -> FilePath -> String -> IO String
-generateFromFile opts f m = do
-  (d, s) <- either (fail . show) return =<< XDR.parseFile f
-  let h = generate m $ reident opts s d
-  return $ "-- Generated from " ++ f ++ " by oncrpc/hsxdrgen\n"
+data GenerateOptions = GenerateOptions
+  { generateModuleName :: String
+  , generateReidentOptions :: ReidentOptions
+  }
+
+-- |Parse an XDR specification and generate a Haskell module, or fail on error.
+-- The 'String' argument provides a description of the input to use in parse errors.
+generateModule :: Monad m => GenerateOptions -> String -> BSLC.ByteString -> m (HS.Module ())
+generateModule GenerateOptions{..} n b = do
+  (d, s) <- either (fail . show) return $ XDR.parse n b
+  return $ specification generateModuleName $ reident generateReidentOptions s d
+
+-- |Parse an XDR specification and generate pretty-printed Haskell source string, or fail on error.
+-- The 'String' argument provides a description of the input to use in parse errors.
+generate :: Monad m => GenerateOptions -> String -> BSLC.ByteString -> m String
+generate opts n s = do
+  m <- generateModule opts n s
+  return $ "-- Generated from " ++ n ++ " by https://github.com/dylex/oncrpc\n"
     ++ prettyPrintWithMode defaultMode
-      { classIndent = 2
-      , doIndent = 2
+      { classIndent   = 2
+      , doIndent      = 2
       , multiIfIndent = 2
-      , caseIndent = 2
-      , letIndent = 2
-      , whereIndent = 2
-      , onsideIndent = 2
-      } h
+      , caseIndent    = 2
+      , letIndent     = 2
+      , whereIndent   = 2
+      , onsideIndent  = 2
+      } m
+
+-- |'generate' from a file.
+generateFromFile :: GenerateOptions -> FilePath -> IO String
+generateFromFile opts f = generate opts f =<< BSLC.readFile f

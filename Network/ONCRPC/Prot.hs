@@ -1,4 +1,4 @@
--- Generated from rpc.x by oncrpc/hsxdrgen
+-- Generated from rpc.x by https://github.com/dylex/oncrpc
 {-# LANGUAGE DataKinds, MultiParamTypeClasses, TypeSynonymInstances
   #-}
 module Network.ONCRPC.Prot where
