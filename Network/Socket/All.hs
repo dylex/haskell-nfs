@@ -9,7 +9,7 @@ module Network.Socket.All
   , sendBuilder
   ) where
 
-import           Control.Monad (guard)
+import           Control.Monad (unless)
 import qualified Data.ByteString.Builder as B
 import qualified Data.ByteString.Builder.Extra as B
 import           Data.Word (Word8)
@@ -50,7 +50,7 @@ recvStorable s = alloca $ \p -> do
 sendAllBuf :: Socket -> Ptr Word8 -> Int -> IO ()
 sendAllBuf s p n = do
   r <- allBufWith (sendBuf s) p n
-  guard (r == n)
+  unless (r == n) $ fail $ "sendAllBuf: sent " ++ show r ++ "/" ++ show n
 
 -- |Send a raw memory object to a socket.
 -- Returns 'False' on short read.
