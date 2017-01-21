@@ -1,7 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Client
-  ( ClientServer
+  ( ClientServer(..)
   , Client
   , openClient
   , closeClient
