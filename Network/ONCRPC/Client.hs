@@ -1,16 +1,21 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Client
-  ( newClient
+  ( ClientServer
+  , Client
+  , openClient
+  , closeClient
   , rpcCall
   ) where
 
-import           Control.Concurrent (ThreadId, forkIO)
-import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, modifyMVar_, modifyMVarMasked)
+import           Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
+import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, modifyMVar, modifyMVar_, modifyMVarMasked)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.IntMap.Strict as IntMap
+import           Data.Time.Clock (getCurrentTime, diffUTCTime)
 import qualified Network.Socket as Net
 import           System.IO (hPutStrLn, stderr)
-import           System.IO.Error (ioError, mkIOError, eofErrorType)
+import           System.IO.Error (catchIOError)
 import           System.Random (randomIO)
 
 import qualified Network.ONCRPC.XDR as XDR
@@ -18,61 +23,109 @@ import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
 import           Network.ONCRPC.Message
 
+-- |How to connect to an RPC server
+data ClientServer
+  = ClientServerPort -- ^a known service by host/port
+    { clientServerHost :: Net.HostName
+    , clientServerPort :: Net.ServiceName
+    }
+
 data Request = forall a . XDR.XDR a => Request
   { requestBody :: BSL.ByteString -- ^for retransmits
-  , requestAction :: MVar (Reply a) -- (Maybe (RPC.Reply_body, BSL.ByteString))
+  , requestAction :: MVar (Reply a)
   }
 
 data State = State
-  { stateSocket :: Net.Socket
+  { stateSocket :: Maybe Net.Socket
   , stateXID :: XID
-  , stateThread :: ThreadId
   , stateRequests :: IntMap.IntMap Request
   }
 
-type Client = MVar State
+data Client = Client
+  { clientServer :: ClientServer
+  , clientThread :: ThreadId
+  , clientState :: MVar State
+  }
 
-warn :: String -> IO ()
-warn = hPutStrLn stderr
+warnMsg :: Show e => String -> e -> IO ()
+warnMsg m = hPutStrLn stderr . (++) ("Network.ONCRPC.Client: " ++ m ++ ": ") . show
 
-clientThread :: Client -> Net.Socket -> IO ()
-clientThread cv sock = next messageStart where
-  next ms = do
-    maybe closed msg =<< recvGetFirst sock XDR.xdrGet ms
-  msg (Right (RPC.Rpc_msg x (RPC.Rpc_msg_body'REPLY b)), ms) = do
-    q <- modifyMVarMasked cv $ \s@State{ stateRequests = m } -> do
+clientRecv :: Client -> Net.Socket -> IO ()
+clientRecv c sock = next messageStart where
+  next ms =
+    check msg =<< recvGetFirst sock XDR.xdrGet ms
+  msg (Right (RPC.Rpc_msg x (RPC.Rpc_msg_body'REPLY b))) ms = do
+    q <- modifyMVarMasked (clientState c) $ \s@State{ stateRequests = m } -> do
       let (q, m') = IntMap.updateLookupWithKey (const $ const Nothing) (fromIntegral x) m
       return (s{ stateRequests = m' }, q)
     case q of
       Nothing -> do
-        warn $ "Response to unknown xid " ++ show x
-        next ms
-      Just (Request _ a) -> do
-        (r, ms') <- maybe closed return =<< recvGetNext sock (getReply b) ms
-        putMVar a $ either ReplyFail id r
-        next $ ms'
-  msg (e, ms) = do
-    warn $ "Couldn't decode reply msg: " ++ show e
-    next ms
-  closed = ioError $ mkIOError eofErrorType "ONCRPC.Client: socket closed" Nothing Nothing
+        warnMsg "ignoring response to unknown xid" x
+        next ms -- ignore
+      Just (Request _ a) ->
+        check (\r ms' -> do
+          putMVar a $ either ReplyFail id r
+          next ms')
+          =<< recvGetNext sock (getReply b) ms
+  msg e _ = warnMsg "couldn't decode reply msg" e -- return
+  check _ Nothing = warnMsg "socket closed" () -- return
+  check f (Just (r, ms)) = f r ms
 
-newClient :: Net.Socket -> IO Client
-newClient sock = do
-  c <- newEmptyMVar
+clientConnect :: Client -> IO Net.Socket
+clientConnect c = modifyMVar (clientState c) $ conn (clientServer c) where
+  conn _ s@State{ stateSocket = Just sock } = return (s, sock)
+  conn ClientServerPort{..} s = do
+    addr:_ <- Net.getAddrInfo (Just Net.defaultHints{ Net.addrSocketType = Net.Stream }) (Just clientServerHost) (Just clientServerPort)
+    sock <- Net.socket (Net.addrFamily addr) (Net.addrSocketType addr) (Net.addrProtocol addr)
+    Net.connect sock (Net.addrAddress addr)
+    resend sock (stateRequests s)
+    return (s{ stateSocket = Just sock }, sock)
+  resend sock = mapM_ $ sendMessage sock . requestBody
+
+clientDisconnect :: Client -> IO ()
+clientDisconnect c = modifyMVar_ (clientState c) $ \s -> do
+  catchIOError
+    (mapM_ Net.close $ stateSocket s)
+    (warnMsg "close")
+  return s{ stateSocket = Nothing }
+
+clientMain :: Client -> IO ()
+clientMain c = do
+  t <- getCurrentTime
+  catchIOError
+    (clientConnect c >>= clientRecv c)
+    (warnMsg "client")
+  clientDisconnect c
+  dt <- (`diffUTCTime` t) <$> getCurrentTime
+  threadDelay $ ceiling $ 300000000 / (dt + 20)
+  clientMain c
+
+openClient :: ClientServer -> IO Client
+openClient srv = do
+  s <- newEmptyMVar
+  let c = Client
+        { clientServer = srv
+        , clientThread = error "clientThread"
+        , clientState = s
+        }
   xid <- randomIO
-  tid <- forkIO $ clientThread c sock
-  putMVar c State
-    { stateSocket = sock
+  tid <- forkIO $ clientMain c
+  putMVar s State
+    { stateSocket = Nothing
     , stateXID = xid
-    , stateThread = tid
     , stateRequests = IntMap.empty
     }
-  return c
+  return c{ clientThread = tid }
+
+closeClient :: Client -> IO ()
+closeClient c = do
+  killThread $ clientThread c
+  clientDisconnect c
 
 rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO (Reply r)
-rpcCall cv a = do
+rpcCall c a = do
   rv <- newEmptyMVar
-  modifyMVar_ cv $ \s -> do
+  modifyMVar_ (clientState c) $ \s -> do
     let x = stateXID s
         q = Request
           { requestBody = XDR.xdrSerializeLazy $ MsgCall x a
@@ -82,6 +135,8 @@ rpcCall cv a = do
     case p of
       Nothing -> return ()
       Just (Request _ v) -> putMVar v (ReplyFail "no response") -- should only happen on xid wraparound
-    sendMessage (stateSocket s) $ requestBody q
+    catchIOError
+      (mapM_ (`sendMessage` requestBody q) $ stateSocket s)
+      (warnMsg "sendMessage")
     return s{ stateRequests = r, stateXID = x+1 }
   takeMVar rv

@@ -47,6 +47,7 @@ library
     network >= 2.6.3,
     parsec,
     random,
+    time,
     vector
 
 executable hsrpcgen
