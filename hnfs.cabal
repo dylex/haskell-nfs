@@ -1,0 +1,32 @@
+name:                hnfs
+version:             0
+synopsis:            NFS client library
+description:         
+license:             Apache-2.0
+license-file:        LICENSE
+author:              Dylan Simon
+maintainer:          dylan@dylex.net
+copyright:           2017
+category:            Network, Filesystem
+build-type:          Custom
+cabal-version:       >=1.10
+tested-with:         GHC == 7.10.3, GHC == 8.0.1
+
+source-repository head
+  type: git
+  location: https://github.com/dylex/hnfs
+
+custom-setup
+  setup-depends:
+    base >=4.8 && <5,
+    Cabal,
+    ONC-RPC
+
+library
+  exposed-modules:
+    Network.NFS.V4.Prot
+  default-language: Haskell2010
+  ghc-options: -Wall
+  build-depends:       
+    base >=4.8 && <5,
+    ONC-RPC
