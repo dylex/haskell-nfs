@@ -1,4 +1,4 @@
--- | XDR specification, as per RFC4506 and RPC extensions from RFC5531
+-- |XDR specification, as per RFC4506 and RPC extensions from RFC5531
 
 module Network.ONCRPC.XDR.Specification
   where

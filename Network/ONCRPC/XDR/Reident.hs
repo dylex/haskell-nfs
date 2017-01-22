@@ -15,6 +15,7 @@ import qualified Data.Set as Set
 import           Network.ONCRPC.XDR.Specification
 import qualified Network.ONCRPC.XDR.Parse as XDR
 
+-- |How to generate Haskell identifiers from XDR in order to confirm to Haskell's lexical rules and ensure uniqueness.
 data ReidentOptions = ReidentOptions
   { reidentUpperPrefix, reidentLowerPrefix :: String -- ^Prefix to use to make an identifier a different case if necessary, e.g. @\"_\"@ for lower-case, or @\"XDR_\"@ for upper case (default empty: just changes the first character, possibly resulting in names like @\"nFS_NULL\"@)
   , reidentJoinField, reidentJoinProcedure :: Maybe String -- ^Prefix fields with their type name (or program, version name) and this string (necessary for most XDR files), or @Nothing@ to use only the field name (or procedure name), which assumes uniqueness across the file (e.g., if you wrote the file yourself, though often safe for procedures only) (default @Just \"\'\"@)

@@ -87,6 +87,7 @@ instance XDREnum XDR.UnsignedInt where
   xdrFromEnum = fromIntegral
   xdrToEnum = return . fromIntegral
 
+-- |Version of 'xdrToEnum' that fails at runtime for invalid values: @fromMaybe undefined . 'xdrToEnum'@.
 xdrToEnum' :: XDREnum a => XDR.Int -> a
 xdrToEnum' = runIdentity . xdrToEnum
 
@@ -264,8 +265,10 @@ xdrSerialize = S.runPut . xdrPut
 xdrSerializeLazy :: XDR a => a -> BSL.ByteString
 xdrSerializeLazy = S.runPutLazy . xdrPut
 
-xdrDeserialize :: (XDR a, Monad m) => BS.ByteString -> m a
-xdrDeserialize = either fail return . S.runGet xdrGet
+-- |@"S.runGet' 'xdrGet'@
+xdrDeserialize :: XDR a => BS.ByteString -> Either String a
+xdrDeserialize = S.runGet xdrGet
 
-xdrDeserializeLazy :: (XDR a, Monad m) => BSL.ByteString -> m a
-xdrDeserializeLazy = either fail return . S.runGetLazy xdrGet
+-- |@"S.runGetLazy' 'xdrGet'@
+xdrDeserializeLazy :: XDR a => BSL.ByteString -> Either String a
+xdrDeserializeLazy = S.runGetLazy xdrGet

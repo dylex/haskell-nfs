@@ -1,3 +1,4 @@
+-- |RPC protocol description.
 -- Generated from rpc.x by https://github.com/dylex/oncrpc
 {-# LANGUAGE DataKinds, MultiParamTypeClasses, TypeSynonymInstances
   #-}

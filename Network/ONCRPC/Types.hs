@@ -1,3 +1,5 @@
+-- |Higher-level types for RPC procedures and messages.
+
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Types
   ( XID
@@ -51,7 +53,7 @@ opacifyAuth (AuthOpaque o) = o
 unopacifyAuth :: RPC.Opaque_auth -> Auth
 unopacifyAuth o@(RPC.Opaque_auth n b) = case xdrToEnum n of
   Just RPC.AUTH_NONE -> AuthNone
-  Just RPC.AUTH_SYS | Just s <- xdrDeserialize (unLengthArray b) -> AuthSys s
+  Just RPC.AUTH_SYS | Right s <- xdrDeserialize (unLengthArray b) -> AuthSys s
   _ -> AuthOpaque o
 
 instance XDR.XDR Auth where
@@ -134,6 +136,7 @@ splitReply (ReplyRejected r) =
   )
 splitReply (ReplyFail e) = (error $ "splitReply ReplyFail: " ++ e, Nothing)
 
+-- |Construct a 'Reply' based on an already-parsed 'RPC.Reply_body' and to-be-parsed results.
 getReply :: XDR.XDR a => RPC.Reply_body -> S.Get (Reply a)
 getReply (RPC.Reply_body'MSG_ACCEPTED (RPC.Accepted_reply v d@RPC.Accepted_reply_data'SUCCESS)) =
   Reply (unopacifyAuth v) <$> xdrGet <|> return (ReplyError (unopacifyAuth v) d)

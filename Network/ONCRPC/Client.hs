@@ -1,3 +1,8 @@
+-- |ONC RPC Client interface.
+-- Handles RPC client protocol layer.
+-- Clients are fully thread-safe, allowing multiple outstanding requests, and automatically reconnect on error.
+-- Currently error messages are just written to stdout.
+
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Client
@@ -23,12 +28,13 @@ import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
 import           Network.ONCRPC.Message
 
--- |How to connect to an RPC server
+-- |How to connect to an RPC server.
+-- Currently only TCP connections to pre-defined ports are supported (no portmap).
 data ClientServer
   = ClientServerPort
-    { clientServerHost :: Net.HostName
-    , clientServerPort :: Net.ServiceName
-    } -- ^a known service by host/port
+    { clientServerHost :: Net.HostName -- ^Host name or IP address of server
+    , clientServerPort :: Net.ServiceName -- ^Service name (not portmap) or port number
+    } -- ^a known service by host/port, currently only TCP
 
 data Request = forall a . XDR.XDR a => Request
   { requestBody :: BSL.ByteString -- ^for retransmits
@@ -41,6 +47,7 @@ data State = State
   , stateRequests :: IntMap.IntMap Request
   }
 
+-- |An RPC Client.
 data Client = Client
   { clientServer :: ClientServer
   , clientThread :: ThreadId
@@ -100,6 +107,8 @@ clientMain c = do
   threadDelay $ ceiling $ 300000000 / (dt + 20)
   clientMain c
 
+-- |Create a new RPC client to the given server.
+-- This client must be destroyed with 'closeClient' when done.
 openClient :: ClientServer -> IO Client
 openClient srv = do
   s <- newEmptyMVar
@@ -117,26 +126,33 @@ openClient srv = do
     }
   return c{ clientThread = tid }
 
+-- |Destroy an RPC client and close its underlying network connection.
+-- Any outstanding requests return 'ReplyFail', any any further attempt to use the 'Client' may hang indefinitely.
 closeClient :: Client -> IO ()
 closeClient c = do
   killThread $ clientThread c
   clientDisconnect c
+  -- Leave the state empty.
+  s <- takeMVar $ clientState c
+  mapM_ (\(Request _ a) -> putMVar a $ ReplyFail "closed") $ stateRequests s
 
+-- |Send a call using an open client, and wait for a response or 'ReplyFail' on connection error.
+-- The request will be automatically retried until a response is received.
 rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO (Reply r)
 rpcCall c a = do
   rv <- newEmptyMVar
-  modifyMVar_ (clientState c) $ \s -> do
+  p <- modifyMVar (clientState c) $ \s -> do
     let x = stateXID s
         q = Request
           { requestBody = XDR.xdrSerializeLazy $ MsgCall x a
           , requestAction = rv
           }
         (p, r) = IntMap.insertLookupWithKey (const const) (fromIntegral x) q (stateRequests s)
-    case p of
-      Nothing -> return ()
-      Just (Request _ v) -> putMVar v (ReplyFail "no response") -- should only happen on xid wraparound
     catchIOError
       (mapM_ (`sendMessage` requestBody q) $ stateSocket s)
       (warnMsg "sendMessage")
-    return s{ stateRequests = r, stateXID = x+1 }
+    return (s{ stateRequests = r, stateXID = x+1 }, p)
+  case p of
+    Nothing -> return ()
+    Just (Request _ v) -> putMVar v (ReplyFail "no response") -- should only happen on xid wraparound
   takeMVar rv

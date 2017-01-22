@@ -1,3 +1,4 @@
+-- |Generate Haskell code from XDR descriptions as per RFC4506 and RPC extensions from RFC5531
 
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.XDR.Generate
@@ -250,8 +251,9 @@ specification n l = HS.Module ()
   else [])
   $ concatMap definition l
 
+-- |Options for generating Haskell code
 data GenerateOptions = GenerateOptions
-  { generateModuleName :: String
+  { generateModuleName :: String -- ^Name for the generated module
   , generateReidentOptions :: ReidentOptions
   }
 

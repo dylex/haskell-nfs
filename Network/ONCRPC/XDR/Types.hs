@@ -1,4 +1,5 @@
--- | XDR Types
+-- | XDR Types.
+-- The 'Quadruple' type is not supported as there is no reasonable Haskell equivalent.
 
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
