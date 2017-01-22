@@ -1,5 +1,7 @@
 -- | XDR Types.
 -- The 'Quadruple' type is not supported as there is no reasonable Haskell equivalent.
+--
+-- This module should be imported qualified, e.g., as @XDR@.
 
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}

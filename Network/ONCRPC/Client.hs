@@ -11,10 +11,13 @@ module Network.ONCRPC.Client
   , openClient
   , closeClient
   , rpcCall
+  , rpcCall'
   ) where
 
 import           Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, modifyMVar, modifyMVar_, modifyMVarMasked)
+import           Control.Exception (throw)
+import           Control.Monad ((<=<))
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Time.Clock (getCurrentTime, diffUTCTime)
@@ -137,7 +140,7 @@ closeClient c = do
   s <- takeMVar $ clientState c
   mapM_ (\(Request _ a) -> putMVar a $ ReplyFail "closed") $ stateRequests s
 
--- |Send a call using an open client, and wait for a response or 'ReplyFail' on connection error.
+-- |Make an RPC request using an open client, and wait for a response or 'ReplyFail' on protocol error.
 -- The request will be automatically retried until a response is received.
 rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO (Reply r)
 rpcCall c a = do
@@ -157,3 +160,8 @@ rpcCall c a = do
     Nothing -> return ()
     Just (Request _ v) -> putMVar v (ReplyFail "no response") -- should only happen on xid wraparound
   takeMVar rv
+
+-- |As with 'rpcCall', make an RPC request but throw an 'Network.ONCRPC.Exception.RPCException', 'ReplyException' on any unsucessful response.
+-- If you need the auth verifier, use 'rpcCall'.
+rpcCall' :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO r
+rpcCall' c = either throw return . replyResult <=< rpcCall c

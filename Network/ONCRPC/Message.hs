@@ -1,23 +1,29 @@
 -- |Higher-level for RPC messages.
 
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Message
   ( Auth(..)
   , Call(..)
   , Reply(..)
+  , ReplyException
   , replyResult
   , getReply
   , Msg(..)
   ) where
 
 import           Control.Applicative ((<|>))
+import           Control.Exception (Exception(..))
 import           Control.Monad (guard)
 import qualified Data.Serialize as S
+import           Data.Typeable (Typeable)
+import           Data.Void (Void)
 
 import qualified Network.ONCRPC.XDR as XDR
 import           Network.ONCRPC.XDR.Array
 import           Network.ONCRPC.XDR.Serial
 import           Network.ONCRPC.Types
+import           Network.ONCRPC.Exception
 import qualified Network.ONCRPC.Prot as RPC
 
 -- |More translucent version of 'RPC.Opaque_auth' union (not expressible in XDR)
@@ -99,17 +105,36 @@ data Reply a
     { replyRejected :: !RPC.Rejected_reply
     }
   | ReplyFail String -- ^Missing/corrupt response
-  deriving (Show)
+  deriving (Typeable)
 
--- |The successful reply results or a description of the error.
-replyResult :: Reply a -> Either String a
+instance Show a => Show (Reply a) where
+  showsPrec p (Reply v r) = showParen (p > 10) $
+    showString "Reply " . showsPrec 11 v . showChar ' ' . showsPrec 11 r
+  showsPrec _ r = showString "RPC reply error: " . showString (se r) where
+    se (Reply _ _) = "SUCCESS"
+    se (ReplyError _ (RPC.Accepted_reply_data'PROG_MISMATCH l h)) = "PROG_MISMATCH(" ++ show l ++ "," ++ show h ++ ")"
+    se (ReplyError _ e) = show $ RPC.accepted_reply_data'stat e
+    se (ReplyRejected (RPC.Rejected_reply'RPC_MISMATCH l h)) = "RPC_MISMATCH(" ++ show l ++ "," ++ show h ++ ")"
+    se (ReplyRejected (RPC.Rejected_reply'AUTH_ERROR s)) = "AUTH_ERROR(" ++ show s ++ ")"
+    se (ReplyFail e) = e
+
+instance Functor Reply where
+  fmap f (Reply v r) = Reply v $ f r
+  fmap _ (ReplyError v e) = ReplyError v e
+  fmap _ (ReplyRejected e) = ReplyRejected e
+  fmap _ (ReplyFail e) = ReplyFail e
+
+type ReplyException = Reply Void
+instance Exception ReplyException where
+  toException = rpcExceptionToException
+  fromException = rpcExceptionFromException
+
+-- |The successful reply results or an error.
+replyResult :: Reply a -> Either ReplyException a
 replyResult (Reply _ r) = Right r
-replyResult (ReplyError _ RPC.Accepted_reply_data'SUCCESS) = Left "SUCCESS"
-replyResult (ReplyError _ (RPC.Accepted_reply_data'PROG_MISMATCH l h)) = Left $ "PROG_MISMATCH(" ++ show l ++ "," ++ show h ++ ")"
-replyResult (ReplyError _ (RPC.Accepted_reply_data'default s)) = Left $ show s
-replyResult (ReplyRejected (RPC.Rejected_reply'RPC_MISMATCH l h)) = Left $ "RPC_MISMATCH(" ++ show l ++ "," ++ show h ++ ")"
-replyResult (ReplyRejected (RPC.Rejected_reply'AUTH_ERROR s)) = Left $ "AUTH_ERROR(" ++ show s ++ ")"
-replyResult (ReplyFail e) = Left e
+replyResult (ReplyError v e) = Left $ ReplyError v e
+replyResult (ReplyRejected e) = Left $ ReplyRejected e
+replyResult (ReplyFail e) = Left $ ReplyFail e
 
 splitReply :: Reply a -> (RPC.Reply_body, Maybe a)
 splitReply (Reply v r) = 

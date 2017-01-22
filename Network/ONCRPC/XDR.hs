@@ -1,4 +1,6 @@
 -- | XDR: External Data Representation as described in RFC4506
+--
+-- This module should be imported qualified, e.g., as @XDR@.
 
 module Network.ONCRPC.XDR
   ( module Network.ONCRPC.XDR.Types
