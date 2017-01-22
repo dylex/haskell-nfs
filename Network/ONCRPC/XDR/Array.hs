@@ -8,7 +8,9 @@
 {-# LANGUAGE TypeOperators #-}
 -- {-# OPTIONS_GHC -Wno-redundant-constraints #-}
 module Network.ONCRPC.XDR.Array
-  ( LengthArray
+  ( KnownNat
+  , KnownOrdering
+  , LengthArray
   , FixedLengthArray
   , fixedLengthArrayLength
   , BoundedLengthArray

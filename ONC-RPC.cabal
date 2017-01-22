@@ -33,6 +33,7 @@ library
     Network.ONCRPC.XDR.Array
     Network.ONCRPC.XDR.Types
     Network.ONCRPC.XDR.Serial
+    Network.ONCRPC.XDR.Opaque
     Network.ONCRPC.XDR.Generate
     Network.ONCRPC.XDR.Cabal
     Network.ONCRPC.XDR

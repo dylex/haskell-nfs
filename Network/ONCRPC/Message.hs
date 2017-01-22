@@ -22,6 +22,7 @@ import           Data.Void (Void)
 import qualified Network.ONCRPC.XDR as XDR
 import           Network.ONCRPC.XDR.Array
 import           Network.ONCRPC.XDR.Serial
+import           Network.ONCRPC.XDR.Opaque
 import           Network.ONCRPC.Types
 import           Network.ONCRPC.Exception
 import qualified Network.ONCRPC.Prot as RPC
@@ -35,13 +36,13 @@ data Auth
 
 opacifyAuth :: Auth -> RPC.Opaque_auth
 opacifyAuth AuthNone    = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_NONE) $ emptyBoundedLengthArray
-opacifyAuth (AuthSys s) = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_SYS)  $ lengthArray' $ xdrSerialize s
+opacifyAuth (AuthSys s) = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_SYS)  $ toOpaque' s
 opacifyAuth (AuthOpaque o) = o
 
 unopacifyAuth :: RPC.Opaque_auth -> Auth
 unopacifyAuth o@(RPC.Opaque_auth n b) = case xdrToEnum n of
   Just RPC.AUTH_NONE -> AuthNone
-  Just RPC.AUTH_SYS | Right s <- xdrDeserialize (unLengthArray b) -> AuthSys s
+  Just RPC.AUTH_SYS | Just s <- fromOpaque b -> AuthSys s
   _ -> AuthOpaque o
 
 instance XDR.XDR Auth where
