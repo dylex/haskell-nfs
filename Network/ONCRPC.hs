@@ -2,10 +2,10 @@
 
 module Network.ONCRPC
   ( module Network.ONCRPC.XDR
-  , module Network.ONCRPC.Types
+  , module Network.ONCRPC.Message
   , module Network.ONCRPC.Client
   ) where
 
 import Network.ONCRPC.XDR
-import Network.ONCRPC.Types
+import Network.ONCRPC.Message
 import Network.ONCRPC.Client
