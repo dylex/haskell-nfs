@@ -51,8 +51,8 @@ ppRPCGen bi _ = PreProcessor
   }
 
 -- |Pre-processor for hsrpcgen.
--- You can use it by setting @'UserHooks' { 'hookedPrepProcessors' = ['ppRPCGenSuffixHandler'] }@.
+-- You can use it by setting @'Distributin.Simple.UserHooks' { 'Distributin.Simple.hookedPrepProcessors' = ['ppRPCGenSuffixHandler'] }@.
 -- Note that this will override the default alex @.x@ file handler.
--- You can also specify custom cabal fields corresponding to 'ReidentOptions' and command-line flags, starting with @x-rpcgen-@: @{upper,lower}-prefix@, @join-{field,procedure}@, and @{field,procedure}s-unique}@.
+-- You can also specify custom cabal fields corresponding to 'ReidentOptions' and command-line flags prefixed with @x-rpcgen-@: @{upper,lower}-prefix@, @join-{field,procedure}@, and @{field,procedure}s-unique}@.
 ppRPCGenSuffixHandler :: PPSuffixHandler
 ppRPCGenSuffixHandler = ("x", ppRPCGen)
