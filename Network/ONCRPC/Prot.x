@@ -1,4 +1,4 @@
-/* RFC5531 */
+/* rpc.x extracted from RFC5531 */
 
 const RPC_VERS = 2;
 

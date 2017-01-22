@@ -1,5 +1,5 @@
--- |RPC protocol description.
--- Generated from rpc.x by https://github.com/dylex/oncrpc
+-- |RPC protocol description, as generated from Prot.x, based on RFC5531.
+-- This file can also be generated automatically from cabal.
 {-# LANGUAGE DataKinds, MultiParamTypeClasses, TypeSynonymInstances
   #-}
 module Network.ONCRPC.Prot where

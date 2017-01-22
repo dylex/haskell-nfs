@@ -41,6 +41,7 @@ library
     Network.ONCRPC.XDR
     Network.ONCRPC.Types
     Network.ONCRPC.Prot
+    Network.ONCRPC.Message
     Network.ONCRPC.Client
     Network.ONCRPC
   other-modules:
