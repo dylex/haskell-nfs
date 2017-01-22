@@ -256,6 +256,7 @@ data GenerateOptions = GenerateOptions
   { generateModuleName :: String -- ^Name for the generated module
   , generateReidentOptions :: ReidentOptions
   }
+  deriving (Eq, Show)
 
 -- |Parse an XDR specification and generate a Haskell module, or fail on error.
 -- The 'String' argument provides a description of the input to use in parse errors.
