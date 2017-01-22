@@ -5,6 +5,7 @@ module Network.ONCRPC.Message
   ( Auth(..)
   , Call(..)
   , Reply(..)
+  , replyResult
   , getReply
   , Msg(..)
   ) where
@@ -99,6 +100,16 @@ data Reply a
     }
   | ReplyFail String -- ^Missing/corrupt response
   deriving (Show)
+
+-- |The successful reply results or a description of the error.
+replyResult :: Reply a -> Either String a
+replyResult (Reply _ r) = Right r
+replyResult (ReplyError _ RPC.Accepted_reply_data'SUCCESS) = Left "SUCCESS"
+replyResult (ReplyError _ (RPC.Accepted_reply_data'PROG_MISMATCH l h)) = Left $ "PROG_MISMATCH(" ++ show l ++ "," ++ show h ++ ")"
+replyResult (ReplyError _ (RPC.Accepted_reply_data'default s)) = Left $ show s
+replyResult (ReplyRejected (RPC.Rejected_reply'RPC_MISMATCH l h)) = Left $ "RPC_MISMATCH(" ++ show l ++ "," ++ show h ++ ")"
+replyResult (ReplyRejected (RPC.Rejected_reply'AUTH_ERROR s)) = Left $ "AUTH_ERROR(" ++ show s ++ ")"
+replyResult (ReplyFail e) = Left e
 
 splitReply :: Reply a -> (RPC.Reply_body, Maybe a)
 splitReply (Reply v r) = 
