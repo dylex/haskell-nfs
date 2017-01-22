@@ -8,7 +8,7 @@ author:              Dylan Simon
 maintainer:          dylan@dylex.net
 copyright:           2017
 category:            Network
-build-type:          Simple
+build-type:          Custom
 cabal-version:       >=1.10
 tested-with:         GHC == 7.10.3, GHC == 8.0.1
 
@@ -19,12 +19,25 @@ source-repository head
   type: git
   location: https://github.com/dylex/oncrpc
 
+custom-setup
+  setup-depends:
+    base >=4.8 && <5,
+    bytestring,
+    Cabal,
+    cereal >=0.5.4,
+    containers,
+    filepath,
+    haskell-src-exts >= 1.18,
+    parsec,
+    vector
+
 library
   exposed-modules:
     Network.ONCRPC.XDR.Array
     Network.ONCRPC.XDR.Types
     Network.ONCRPC.XDR.Serial
     Network.ONCRPC.XDR.Generate
+    Network.ONCRPC.XDR.Cabal
     Network.ONCRPC.XDR
     Network.ONCRPC.Types
     Network.ONCRPC.Prot
@@ -42,8 +55,10 @@ library
   build-depends:       
     base >=4.8 && <5,
     bytestring,
+    Cabal,
     cereal >=0.5.4,
     containers,
+    filepath,
     haskell-src-exts >= 1.18,
     network >= 2.6.3,
     parsec,
