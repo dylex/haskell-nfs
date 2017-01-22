@@ -55,19 +55,40 @@
 %#ifndef _AUTH_SYS_DEFINE_FOR_NFSv41
 %#define _AUTH_SYS_DEFINE_FOR_NFSv41
 %#include <rpc/auth_sys.h>
+
+/* From RFC5531: */
+enum auth_flavor {
+	AUTH_NONE       = 0,
+	AUTH_SYS        = 1,
+	AUTH_SHORT      = 2,
+	AUTH_DH         = 3,
+	AUTH_KERB       = 4, /* RFC2695 */
+	AUTH_RSA        = 5,
+	RPCSEC_GSS      = 6  /* RFC2203 */
+	/* and more to be defined */
+};
+
 %typedef struct authsys_parms authsys_parms;
+
+/* From RFC5531: */
+struct authsys_parms {
+	unsigned int stamp;
+	string machinename<255>;
+	unsigned int uid;
+	unsigned int gid;
+	unsigned int gids<16>;
+};
+
 %#endif /* _AUTH_SYS_DEFINE_FOR_NFSv41 */
 
 /*
  * Basic typedefs for RFC 1832 data type definitions
  */
 
-/*
- * typedef int                  int32_t;
- * typedef unsigned int         uint32_t;
- * typedef hyper                int64_t;
- * typedef unsigned hyper       uint64_t;
- */
+typedef int                  int32_t;
+typedef unsigned int         uint32_t;
+typedef hyper                int64_t;
+typedef unsigned hyper       uint64_t;
 
 /*
  * Sizes
