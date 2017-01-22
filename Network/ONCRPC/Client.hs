@@ -26,7 +26,7 @@ import           System.Random (randomIO)
 import qualified Network.ONCRPC.XDR as XDR
 import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
-import           Network.ONCRPC.Message
+import           Network.ONCRPC.Transport
 
 -- |How to connect to an RPC server.
 -- Currently only TCP connections to pre-defined ports are supported (no portmap).
@@ -58,7 +58,7 @@ warnMsg :: Show e => String -> e -> IO ()
 warnMsg m = hPutStrLn stderr . (++) ("Network.ONCRPC.Client: " ++ m ++ ": ") . show
 
 clientRecv :: Client -> Net.Socket -> IO ()
-clientRecv c sock = next messageStart where
+clientRecv c sock = next transportStart where
   next ms =
     check msg =<< recvGetFirst sock XDR.xdrGet ms
   msg (Right (RPC.Rpc_msg x (RPC.Rpc_msg_body'REPLY b))) ms = do
@@ -87,7 +87,7 @@ clientConnect c = modifyMVar (clientState c) $ conn (clientServer c) where
     Net.connect sock (Net.addrAddress addr)
     resend sock (stateRequests s)
     return (s{ stateSocket = Just sock }, sock)
-  resend sock = mapM_ $ sendMessage sock . requestBody
+  resend sock = mapM_ $ sendTransport sock . requestBody
 
 clientDisconnect :: Client -> IO ()
 clientDisconnect c = modifyMVar_ (clientState c) $ \s -> do
@@ -149,8 +149,8 @@ rpcCall c a = do
           }
         (p, r) = IntMap.insertLookupWithKey (const const) (fromIntegral x) q (stateRequests s)
     catchIOError
-      (mapM_ (`sendMessage` requestBody q) $ stateSocket s)
-      (warnMsg "sendMessage")
+      (mapM_ (`sendTransport` requestBody q) $ stateSocket s)
+      (warnMsg "sendTransport")
     return (s{ stateRequests = r, stateXID = x+1 }, p)
   case p of
     Nothing -> return ()

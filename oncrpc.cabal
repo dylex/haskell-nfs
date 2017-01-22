@@ -49,7 +49,7 @@ library
     Network.ONCRPC.XDR.Parse
     Network.ONCRPC.XDR.Reident
     Network.ONCRPC.RecordMarking
-    Network.ONCRPC.Message
+    Network.ONCRPC.Transport
   default-language: Haskell2010
   ghc-options: -Wall
   build-depends:       
