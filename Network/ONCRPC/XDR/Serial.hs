@@ -1,10 +1,10 @@
 -- |XDR Serialization
 
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 module Network.ONCRPC.XDR.Serial
   ( XDR(..)
@@ -13,6 +13,7 @@ module Network.ONCRPC.XDR.Serial
   , xdrPutEnum
   , xdrGetEnum
   , XDRUnion(..)
+  , xdrDiscriminant
   , xdrPutUnion
   , xdrGetUnion
   
@@ -26,7 +27,7 @@ import           Control.Monad (guard, unless, replicateM)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Functor.Identity (runIdentity)
-import           Data.Maybe (fromJust, isJust)
+import           Data.Maybe (fromJust)
 import           Data.Proxy (Proxy(..))
 import qualified Data.Serialize as S
 import qualified Data.Vector as V
@@ -106,17 +107,20 @@ instance XDREnum XDR.Bool where
   xdrToEnum 1 = return True
   xdrToEnum _ = fail "invalid bool"
 
--- |An XDR type defined with \"union\".
-class XDR a => XDRUnion a where
-  xdrDiscriminant :: a -> XDR.Int
-  -- |Put the body of a union, without its discriminant.
-  xdrPutUnionArm :: a -> S.Put
+-- |An XDR type defined with \"union\"
+class (XDR a, XDREnum (XDRDiscriminant a)) => XDRUnion a where
+  type XDRDiscriminant a :: *
+  -- |Split a union into its discriminant and body generator.
+  xdrSplitUnion :: a -> (XDR.Int, S.Put)
   -- |Get the body of a union based on its discriminant.
   xdrGetUnionArm :: XDR.Int -> S.Get a
 
+xdrDiscriminant :: XDRUnion a => a -> XDRDiscriminant a
+xdrDiscriminant = xdrToEnum' . fst . xdrSplitUnion
+
 -- |Default implementation of 'xdrPut' for 'XDRUnion'.
 xdrPutUnion :: XDRUnion a => a -> S.Put
-xdrPutUnion a = xdrPut (xdrDiscriminant a) >> xdrPutUnionArm a
+xdrPutUnion = uncurry ((>>) . xdrPut) . xdrSplitUnion
 
 -- |Default implementation of 'xdrGet' for 'XDRUnion'.
 xdrGetUnion :: XDRUnion a => S.Get a
@@ -128,9 +132,9 @@ instance XDR a => XDR (XDR.Optional a) where
   xdrGet = xdrGetUnion
 
 instance XDR a => XDRUnion (XDR.Optional a) where
-  xdrDiscriminant = xdrFromEnum . isJust
-  xdrPutUnionArm Nothing = return ()
-  xdrPutUnionArm (Just a) = xdrPut a
+  type XDRDiscriminant (XDR.Optional a) = XDR.Bool
+  xdrSplitUnion Nothing = (0, return ())
+  xdrSplitUnion (Just a) = (1, xdrPut a)
   xdrGetUnionArm 0 = return Nothing
   xdrGetUnionArm 1 = Just <$> xdrGet
   xdrGetUnionArm _ = fail $ "xdrGetUnion: invalid discriminant for " ++ xdrType (undefined :: XDR.Optional a)

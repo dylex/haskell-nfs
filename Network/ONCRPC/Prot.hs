@@ -1,7 +1,7 @@
 -- |RPC protocol description, as generated from Prot.x, based on RFC5531.
--- This file can also be generated automatically from cabal.
-{-# LANGUAGE DataKinds, MultiParamTypeClasses, TypeSynonymInstances
-  #-}
+-- This file is not used: cabal automatically generates it from Prot.x.
+-- It is only here in case you need to bootstrap.
+{-# LANGUAGE DataKinds, TypeFamilies #-}
 module Network.ONCRPC.Prot where
 import qualified Prelude
 import qualified Control.Applicative
@@ -214,7 +214,7 @@ data Rpc_msg_body = Rpc_msg_body'CALL{rpc_msg_body'cbody ::
                   deriving (Prelude.Eq, Prelude.Show)
 
 rpc_msg_body'mtype :: Rpc_msg_body -> Msg_type
-rpc_msg_body'mtype = XDR.xdrToEnum' Prelude.. XDR.xdrDiscriminant
+rpc_msg_body'mtype = XDR.xdrDiscriminant
 
 instance XDR.XDR Rpc_msg_body where
   xdrType _ = "Rpc_msg_body"
@@ -222,12 +222,11 @@ instance XDR.XDR Rpc_msg_body where
   xdrGet = XDR.xdrGetUnion
 
 instance XDR.XDRUnion Rpc_msg_body where
-  xdrDiscriminant Rpc_msg_body'CALL{} = 0
-  xdrDiscriminant Rpc_msg_body'REPLY{} = 1
-  xdrPutUnionArm _x@Rpc_msg_body'CALL{}
-    = XDR.xdrPut (rpc_msg_body'cbody _x)
-  xdrPutUnionArm _x@Rpc_msg_body'REPLY{}
-    = XDR.xdrPut (rpc_msg_body'rbody _x)
+  type XDRDiscriminant Rpc_msg_body = Msg_type
+  xdrSplitUnion _x@Rpc_msg_body'CALL{}
+    = (0, XDR.xdrPut (rpc_msg_body'cbody _x))
+  xdrSplitUnion _x@Rpc_msg_body'REPLY{}
+    = (1, XDR.xdrPut (rpc_msg_body'rbody _x))
   xdrGetUnionArm 0
     = Control.Applicative.pure Rpc_msg_body'CALL
         Control.Applicative.<*> XDR.xdrGet
@@ -268,7 +267,7 @@ data Reply_body = Reply_body'MSG_ACCEPTED{reply_body'areply ::
                 deriving (Prelude.Eq, Prelude.Show)
 
 reply_body'stat :: Reply_body -> Reply_stat
-reply_body'stat = XDR.xdrToEnum' Prelude.. XDR.xdrDiscriminant
+reply_body'stat = XDR.xdrDiscriminant
 
 instance XDR.XDR Reply_body where
   xdrType _ = "Reply_body"
@@ -276,12 +275,11 @@ instance XDR.XDR Reply_body where
   xdrGet = XDR.xdrGetUnion
 
 instance XDR.XDRUnion Reply_body where
-  xdrDiscriminant Reply_body'MSG_ACCEPTED{} = 0
-  xdrDiscriminant Reply_body'MSG_DENIED{} = 1
-  xdrPutUnionArm _x@Reply_body'MSG_ACCEPTED{}
-    = XDR.xdrPut (reply_body'areply _x)
-  xdrPutUnionArm _x@Reply_body'MSG_DENIED{}
-    = XDR.xdrPut (reply_body'rreply _x)
+  type XDRDiscriminant Reply_body = Reply_stat
+  xdrSplitUnion _x@Reply_body'MSG_ACCEPTED{}
+    = (0, XDR.xdrPut (reply_body'areply _x))
+  xdrSplitUnion _x@Reply_body'MSG_DENIED{}
+    = (1, XDR.xdrPut (reply_body'rreply _x))
   xdrGetUnionArm 0
     = Control.Applicative.pure Reply_body'MSG_ACCEPTED
         Control.Applicative.<*> XDR.xdrGet
@@ -315,8 +313,7 @@ data Accepted_reply_data = Accepted_reply_data'SUCCESS{}
                          deriving (Prelude.Eq, Prelude.Show)
 
 accepted_reply_data'stat :: Accepted_reply_data -> Accept_stat
-accepted_reply_data'stat
-  = XDR.xdrToEnum' Prelude.. XDR.xdrDiscriminant
+accepted_reply_data'stat = XDR.xdrDiscriminant
 
 instance XDR.XDR Accepted_reply_data where
   xdrType _ = "Accepted_reply_data"
@@ -324,19 +321,17 @@ instance XDR.XDR Accepted_reply_data where
   xdrGet = XDR.xdrGetUnion
 
 instance XDR.XDRUnion Accepted_reply_data where
-  xdrDiscriminant Accepted_reply_data'SUCCESS{} = 0
-  xdrDiscriminant Accepted_reply_data'PROG_MISMATCH{} = 2
-  xdrDiscriminant
-    Accepted_reply_data'default{accepted_reply_data'stat' = x}
-    = XDR.xdrFromEnum x
-  xdrPutUnionArm _x@Accepted_reply_data'SUCCESS{}
-    = Control.Applicative.pure ()
-  xdrPutUnionArm _x@Accepted_reply_data'PROG_MISMATCH{}
-    = XDR.xdrPut (accepted_reply_data'mismatch_info'low _x)
+  type XDRDiscriminant Accepted_reply_data = Accept_stat
+  xdrSplitUnion _x@Accepted_reply_data'SUCCESS{}
+    = (0, Control.Applicative.pure ())
+  xdrSplitUnion _x@Accepted_reply_data'PROG_MISMATCH{}
+    = (2,
+       XDR.xdrPut (accepted_reply_data'mismatch_info'low _x)
         Control.Applicative.*>
-        XDR.xdrPut (accepted_reply_data'mismatch_info'high _x)
-  xdrPutUnionArm _x@Accepted_reply_data'default{}
-    = Control.Applicative.pure ()
+         XDR.xdrPut (accepted_reply_data'mismatch_info'high _x))
+  xdrSplitUnion
+    _x@Accepted_reply_data'default{accepted_reply_data'stat' = d}
+    = (XDR.xdrFromEnum d, Control.Applicative.pure ())
   xdrGetUnionArm 0
     = Control.Applicative.pure Accepted_reply_data'SUCCESS
   xdrGetUnionArm 2
@@ -355,7 +350,7 @@ data Rejected_reply = Rejected_reply'RPC_MISMATCH{rejected_reply'mismatch_info'l
                     deriving (Prelude.Eq, Prelude.Show)
 
 rejected_reply'stat :: Rejected_reply -> Reject_stat
-rejected_reply'stat = XDR.xdrToEnum' Prelude.. XDR.xdrDiscriminant
+rejected_reply'stat = XDR.xdrDiscriminant
 
 instance XDR.XDR Rejected_reply where
   xdrType _ = "Rejected_reply"
@@ -363,14 +358,14 @@ instance XDR.XDR Rejected_reply where
   xdrGet = XDR.xdrGetUnion
 
 instance XDR.XDRUnion Rejected_reply where
-  xdrDiscriminant Rejected_reply'RPC_MISMATCH{} = 0
-  xdrDiscriminant Rejected_reply'AUTH_ERROR{} = 1
-  xdrPutUnionArm _x@Rejected_reply'RPC_MISMATCH{}
-    = XDR.xdrPut (rejected_reply'mismatch_info'low _x)
+  type XDRDiscriminant Rejected_reply = Reject_stat
+  xdrSplitUnion _x@Rejected_reply'RPC_MISMATCH{}
+    = (0,
+       XDR.xdrPut (rejected_reply'mismatch_info'low _x)
         Control.Applicative.*>
-        XDR.xdrPut (rejected_reply'mismatch_info'high _x)
-  xdrPutUnionArm _x@Rejected_reply'AUTH_ERROR{}
-    = XDR.xdrPut (rejected_reply'auth_stat _x)
+         XDR.xdrPut (rejected_reply'mismatch_info'high _x))
+  xdrSplitUnion _x@Rejected_reply'AUTH_ERROR{}
+    = (1, XDR.xdrPut (rejected_reply'auth_stat _x))
   xdrGetUnionArm 0
     = Control.Applicative.pure Rejected_reply'RPC_MISMATCH
         Control.Applicative.<*> XDR.xdrGet

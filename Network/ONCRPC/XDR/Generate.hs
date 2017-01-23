@@ -38,10 +38,10 @@ infix 9 !, !.
   | isUpper c || c == ':' = HS.Con () $ m ! n
   | otherwise = HS.Var () $ m ! n
 
-instDecl :: HS.QName () -> String -> [HS.Decl ()] -> HS.Decl ()
+instDecl :: HS.QName () -> String -> [HS.InstDecl ()] -> HS.Decl ()
 instDecl c t = HS.InstDecl () Nothing
   (HS.IRule () Nothing Nothing $ HS.IHApp () (HS.IHCon () c) $ HS.TyCon () $ ""!t)
-  . Just . map (HS.InsDecl ())
+  . Just
 
 dataDecl :: String -> [HS.ConDecl ()] -> [String] -> HS.Decl ()
 dataDecl n con derive = HS.DataDecl () (HS.DataType ()) Nothing (HS.DHead () $ HS.name n)
@@ -128,12 +128,12 @@ definition (Definition n (TypeDef (TypeSingle (TypeEnum (EnumBody el))))) =
   [ dataDecl n
     (map (flip (HS.ConDecl ()) [] . HS.name . fst) el)
     ["Eq", "Ord", "Enum", "Bounded", "Show"]
-  , instDecl ("XDR"!"XDR") n
+  , instDecl ("XDR"!"XDR") n $ map (HS.InsDecl ())
     [ typeDef n
     , HS.nameBind (HS.name "xdrPut") $ "XDR"!."xdrPutEnum"
     , HS.nameBind (HS.name "xdrGet") $ "XDR"!."xdrGetEnum"
     ]
-  , instDecl ("XDR"!"XDREnum") n
+  , instDecl ("XDR"!"XDREnum") n $ map (HS.InsDecl ())
     [ HS.FunBind () $ map (\(i,v) ->
         sMatch "xdrFromEnum" (HS.pApp (HS.name i) []) $ HS.intE $ toInteger v)
       el
@@ -147,7 +147,7 @@ definition (Definition n (TypeDef (TypeSingle (TypeStruct (StructBody dl))))) =
   [ dataDecl n
     [HS.RecDecl () (HS.name n) hdl]
     ["Eq", "Show"]
-  , instDecl ("XDR"!"XDR") n
+  , instDecl ("XDR"!"XDR") n $ map (HS.InsDecl ())
     [ typeDef n
     , HS.simpleFun (HS.name "xdrPut") (HS.name "_x") $ putFields (HS.var $ HS.name "_x") hdl
     , HS.nameBind (HS.name "xdrGet") $ getFields (pureCon n) hdl
@@ -163,26 +163,22 @@ definition (Definition n (TypeDef (TypeSingle (TypeUnion (UnionBody d@(Declarati
       ho)
     ["Eq", "Show"]
   , HS.TypeSig () [HS.name dn] $ HS.TyFun () (HS.TyCon () $ ""!n) hdt
-  , HS.nameBind (HS.name dn) $ HS.infixApp ("XDR"!."xdrToEnum'") (HS.QVarOp () $ "Prelude"!".") $ "XDR"!."xdrDiscriminant"
-  , instDecl ("XDR"!"XDR") n
+  , HS.nameBind (HS.name dn) $ "XDR"!."xdrDiscriminant"
+  , instDecl ("XDR"!"XDR") n $ map (HS.InsDecl ())
     [ typeDef n
     , HS.nameBind (HS.name "xdrPut") $ "XDR"!."xdrPutUnion"
     , HS.nameBind (HS.name "xdrGet") $ "XDR"!."xdrGetUnion"
     ]
   , instDecl ("XDR"!"XDRUnion") n
-    [ HS.FunBind () $ map (\(c,(l,_)) ->
-        sMatch "xdrDiscriminant"
-          (HS.PRec () (""!l) [])
-          $ HS.intE c)
-      hcl
-      ++ maybe [] (\(l,_) ->
-        [sMatch "xdrDiscriminant" (HS.PRec () (""!l)
-          [HS.PFieldPat () (""!hom) (HS.pvar $ HS.name "x")])
-          $ HS.app ("XDR"!."xdrFromEnum") $ HS.var $ HS.name "x"])
-        ho
-    , HS.FunBind () $ map (putarm . snd) hcl
-      ++ maybeToList (putarm <$> ho)
-    , HS.FunBind () $ map (\(c,(l,b)) ->
+    [ HS.InsType () (HS.TyApp () (HS.TyCon () $ ""!"XDRDiscriminant") (HS.TyCon () $ ""!n)) hdt
+    , HS.InsDecl () $ HS.FunBind () $ map
+        (uncurry (split [] . HS.intE))
+        hcl
+      ++ maybeToList (split
+          [HS.PFieldPat () (""!hom) (HS.pvar $ HS.name "d")]
+          (HS.app ("XDR"!."xdrFromEnum") (""!."d"))
+        <$> ho)
+    , HS.InsDecl () $ HS.FunBind () $ map (\(c,(l,b)) ->
         sMatch "xdrGetUnionArm"
           (HS.intP c)
           $ getFields (pureCon l) b)
@@ -196,9 +192,9 @@ definition (Definition n (TypeDef (TypeSingle (TypeUnion (UnionBody d@(Declarati
             ho]
     ]
   ] where
-  putarm (l,b) = sMatch "xdrPutUnionArm"
-    (HS.PAsPat () (HS.name "_x") $ HS.PRec () (""!l) [])
-    $ putFields (HS.var $ HS.name "_x") b
+  split p c (l,b) = sMatch "xdrSplitUnion"
+    (HS.PAsPat () (HS.name "_x") $ HS.PRec () (""!l) p)
+    $ HS.tuple [c, putFields (""!."_x") b]
   hdt = declType' d
   hcl = map (toInteger *** arm) cl
   hom = dn ++ "'"
@@ -242,7 +238,7 @@ hasProgramDefinition = any isProgramDefinition where
 specification :: String -> Specification -> HS.Module ()
 specification n l = HS.Module ()
   (Just $ HS.ModuleHead () (HS.ModuleName () n) Nothing Nothing)
-  [ HS.LanguagePragma () $ map HS.name ["DataKinds", "MultiParamTypeClasses", "TypeSynonymInstances"] ]
+  [ HS.LanguagePragma () $ map HS.name ["DataKinds", "TypeFamilies"] ]
   ([HS.ImportDecl () (HS.ModuleName () "Prelude") True False False Nothing Nothing Nothing
   , HS.ImportDecl () (HS.ModuleName () "Control.Applicative") True False False Nothing Nothing Nothing
   , HS.ImportDecl () (HS.ModuleName () "Network.ONCRPC.XDR") True False False Nothing (Just $ HS.ModuleName () "XDR") Nothing
