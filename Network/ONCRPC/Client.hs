@@ -10,14 +10,14 @@ module Network.ONCRPC.Client
   , Client
   , openClient
   , closeClient
+  , clientCall
+  , setClientAuth
   , rpcCall
-  , rpcCall'
   ) where
 
 import           Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, modifyMVar, modifyMVar_, modifyMVarMasked)
 import           Control.Exception (throw)
-import           Control.Monad ((<=<))
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Time.Clock (getCurrentTime, diffUTCTime)
@@ -56,6 +56,7 @@ data Client = Client
   { clientServer :: ClientServer
   , clientThread :: ThreadId
   , clientState :: MVar State
+  , clientCred, clientVerf :: Auth
   }
 
 warnMsg :: Show e => String -> e -> IO ()
@@ -120,6 +121,8 @@ openClient srv = do
         { clientServer = srv
         , clientThread = error "clientThread"
         , clientState = s
+        , clientCred = AuthNone
+        , clientVerf = AuthNone
         }
   xid <- randomIO
   tid <- forkIO $ clientMain c
@@ -129,6 +132,15 @@ openClient srv = do
     , stateRequests = IntMap.empty
     }
   return c{ clientThread = tid }
+
+-- |Set the credentials and verifier to use when calling 'rpcCall' on a client.
+-- Note that you can safely use different sets of credentials with the same underlying connection this way.
+-- By default, both are set to 'AuthNone'.
+setClientAuth :: Auth -> Auth -> Client -> Client
+setClientAuth cred verf client = client
+  { clientCred = cred
+  , clientVerf = verf
+  }
 
 -- |Destroy an RPC client and close its underlying network connection.
 -- Any outstanding requests return 'ReplyFail', any any further attempt to use the 'Client' may hang indefinitely.
@@ -140,10 +152,10 @@ closeClient c = do
   s <- takeMVar $ clientState c
   mapM_ (\(Request _ a) -> putMVar a $ ReplyFail "closed") $ stateRequests s
 
--- |Make an RPC request using an open client, and wait for a response or 'ReplyFail' on protocol error.
+-- |Send a call message using an open client, and wait for a reply, returning 'ReplyFail' on protocol error.
 -- The request will be automatically retried until a response is received.
-rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO (Reply r)
-rpcCall c a = do
+clientCall :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO (Reply r)
+clientCall c a = do
   rv <- newEmptyMVar
   p <- modifyMVar (clientState c) $ \s -> do
     let x = stateXID s
@@ -161,7 +173,10 @@ rpcCall c a = do
     Just (Request _ v) -> putMVar v (ReplyFail "no response") -- should only happen on xid wraparound
   takeMVar rv
 
--- |As with 'rpcCall', make an RPC request but throw an 'Network.ONCRPC.Exception.RPCException', 'ReplyException' on any unsucessful response.
--- If you need the auth verifier, use 'rpcCall'.
-rpcCall' :: (XDR.XDR a, XDR.XDR r) => Client -> Call a r -> IO r
-rpcCall' c = either throw return . replyResult <=< rpcCall c
+-- |Make an RPC request.
+-- It waits for a response, retrying as necessary, or throws the 'Network.ONCRPC.Exception.RPCException', 'ReplyException', on any failure.
+-- This uses the credentials set by 'setClientAuth'.
+-- If you need to retrieve the auth verifier, use 'clientCall'.
+rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Procedure a r -> a -> IO r
+rpcCall c p a = either throw return . replyResult
+  =<< clientCall c (Call p (clientCred c) (clientVerf c) a)
