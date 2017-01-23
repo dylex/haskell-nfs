@@ -52,6 +52,8 @@
  *      nfs4_prot.x
  */
 
+const NFS4_MINOR_VERS = 1;
+
 %#ifndef _AUTH_SYS_DEFINE_FOR_NFSv41
 %#define _AUTH_SYS_DEFINE_FOR_NFSv41
 %#include <rpc/auth_sys.h>
