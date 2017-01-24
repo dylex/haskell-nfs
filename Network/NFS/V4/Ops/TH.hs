@@ -6,34 +6,11 @@ module Network.NFS.V4.Ops.TH
   ) where
 
 import           Control.Monad (filterM)
-import           Data.Char (toLower)
 import qualified Data.Set as Set
 import qualified Language.Haskell.TH as TH
 import qualified Network.ONCRPC as RPC
 
 import qualified Network.NFS.V4.Prot as NFS
-
--- Unpredictable field naming prefixes for v4.1 ops (why?)
-opPrefix :: NFS.Nfs_opnum4 -> Maybe String
-opPrefix NFS.OP_BACKCHANNEL_CTL = Just "bc"
-opPrefix NFS.OP_BIND_CONN_TO_SESSION = Just "bcts"
-opPrefix NFS.OP_EXCHANGE_ID = Just "ei"
-opPrefix NFS.OP_CREATE_SESSION = Just "cs"
-opPrefix NFS.OP_DESTROY_SESSION = Just "ds"
-opPrefix NFS.OP_FREE_STATEID = Just "fs"
-opPrefix NFS.OP_GET_DIR_DELEGATION = Just "gdd"
-opPrefix NFS.OP_GETDEVICEINFO = Just "gdi"
-opPrefix NFS.OP_GETDEVICELIST = Just "gdl"
-opPrefix NFS.OP_LAYOUTCOMMIT = Just "loc"
-opPrefix NFS.OP_LAYOUTGET = Just "log"
-opPrefix NFS.OP_LAYOUTRETURN = Just "lor"
-opPrefix NFS.OP_SEQUENCE = Just "s"
-opPrefix NFS.OP_SET_SSV = Just "ss"
-opPrefix NFS.OP_TEST_STATEID = Just "ts"
-opPrefix NFS.OP_WANT_DELEGATION = Just "wd"
-opPrefix NFS.OP_DESTROY_CLIENTID = Just "dc"
-opPrefix NFS.OP_RECLAIM_COMPLETE = Just "rc"
-opPrefix _ = Nothing
 
 thNFSOps :: [NFS.Nfs_opnum4] -> TH.DecsQ
 thNFSOps ops = do
@@ -66,7 +43,6 @@ thNFSOps ops = do
             [ TH.Clause [TH.ConP ("NFS.Nfs_resop4'OP_" `opn` "") [TH.VarP r]] (TH.NormalB $ TH.ConE 'Just `TH.AppE` TH.VarE r) []
             , TH.Clause [TH.WildP] (TH.NormalB $ TH.ConE 'Nothing) []
             ]
-          , TH.FunD nfsResOpStatus [TH.Clause [] (TH.NormalB $ TH.VarE $ opnamec toLower op "NFS." ("4res'" ++ maybe "" (++"r_") (opPrefix op) ++ "status")) []]
           ])
       ops
   where
@@ -75,6 +51,4 @@ thNFSOps ops = do
   nfsOpNum = TH.mkName "nfsOpNum"
   toNFSArgOp = TH.mkName "toNFSOpArg"
   fromNFSResOp = TH.mkName "fromNFSOpRes"
-  nfsResOpStatus = TH.mkName "nfsOpResStatus"
-  opname = opnamec id
-  opnamec cf op p s = TH.mkName $ p ++ (case show op of { ~('O':'P':'_':h:t) -> cf h : t }) ++ s
+  opname op p s = TH.mkName $ p ++ (case show op of { ~('O':'P':'_':o) -> o }) ++ s
