@@ -1,8 +1,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Network.NFS.V4.String
-  ( NFS4CS(..)
-  , NFS4CIS(..)
-  , NFS4Mixed(..)
+  ( NFSStrCS(..)
+  , NFSStrCIS(..)
+  , NFSStrMixed(..)
   ) where
 
 import qualified Data.ByteString.Char8 as BSC
@@ -13,38 +13,36 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import           Network.ONCRPC.XDR.Opaque (Opaqued(..))
 
-import qualified Network.NFS.V4.Prot as NFS
-
 -- |For 'NFS.Utf8str_cs'.
-newtype NFS4CS = NFS4CS{ nfs4csText :: T.Text }
+newtype NFSStrCS = NFSStrCS{ nfsStrCSText :: T.Text }
   deriving (Eq, Ord, IsString)
 -- |For 'NFS.Utf8str_cis'.
-newtype NFS4CIS = NFS4CIS{ nfs4cisText :: CI.CI T.Text }
+newtype NFSStrCIS = NFSStrCIS{ nfsStrCISText :: CI.CI T.Text }
   deriving (Eq, Ord, IsString)
 -- |For 'NFS.Utf8str_mixed', components are separated with \"\@\".
-data NFS4Mixed = NFS4Mixed
-  { nfs4MixedPrefix :: NFS4CS
-  , nfs4MixedDomain :: Maybe NFS4CIS
+data NFSStrMixed = NFSStrMixed
+  { nfsStrMixedPrefix :: NFSStrCS
+  , nfsStrMixedDomain :: Maybe NFSStrCIS
   }
   deriving (Eq, Ord)
 
-instance IsString NFS4Mixed where
+instance IsString NFSStrMixed where
   fromString s = case break ('@' ==) s of
-    (p, []) -> NFS4Mixed (fromString p) Nothing
-    (p, ~('@':d)) -> NFS4Mixed (fromString p) (Just $ fromString d)
+    (p, []) -> NFSStrMixed (fromString p) Nothing
+    (p, ~('@':d)) -> NFSStrMixed (fromString p) (Just $ fromString d)
 
-instance Opaqued NFS4CS where
-  opacify = TE.encodeUtf8 . nfs4csText
-  unopacify = either (fail . show) (return . NFS4CS) . TE.decodeUtf8'
+instance Opaqued NFSStrCS where
+  opacify = TE.encodeUtf8 . nfsStrCSText
+  unopacify = either (fail . show) (return . NFSStrCS) . TE.decodeUtf8'
 
-instance Opaqued NFS4CIS where
-  opacify = TE.encodeUtf8 . CI.original . nfs4cisText
-  unopacify = either (fail . show) (return . NFS4CIS . CI.mk) . TE.decodeUtf8'
+instance Opaqued NFSStrCIS where
+  opacify = TE.encodeUtf8 . CI.original . nfsStrCISText
+  unopacify = either (fail . show) (return . NFSStrCIS . CI.mk) . TE.decodeUtf8'
 
-instance Opaqued NFS4Mixed where
-  opacify (NFS4Mixed p d) = opacify p <> foldMap (BSC.cons '@' . opacify) d
+instance Opaqued NFSStrMixed where
+  opacify (NFSStrMixed p d) = opacify p <> foldMap (BSC.cons '@' . opacify) d
   unopacify s = maybe
-    ((`NFS4Mixed` Nothing) <$> unopacify s)
-    (\i -> NFS4Mixed <$> unopacify (BSC.take i s) <*> (Just <$> unopacify (BSC.drop (succ i) s)))
+    ((`NFSStrMixed` Nothing) <$> unopacify s)
+    (\i -> NFSStrMixed <$> unopacify (BSC.take i s) <*> (Just <$> unopacify (BSC.drop (succ i) s)))
     $ BSC.elemIndexEnd '@' s
     

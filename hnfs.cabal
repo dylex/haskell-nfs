@@ -26,8 +26,11 @@ library
   exposed-modules:
     Network.NFS.V4.Prot
     Network.NFS.V4.String
+    Network.NFS.V4.Ops
     Network.NFS.V4.File
     Network.NFS.V4.Client
+  other-modules:
+    Network.NFS.V4.Ops.TH
   default-language: Haskell2010
   ghc-options: -Wall
   x-rpcgen-procedures-unique: true
@@ -35,8 +38,10 @@ library
     base >=4.8 && <5,
     bytestring,
     case-insensitive,
+    containers,
     filepath,
     network,
+    template-haskell,
     text,
     vector,
     ONC-RPC

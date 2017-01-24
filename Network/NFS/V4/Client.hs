@@ -20,11 +20,11 @@ procs = NFS.nFS_V4 NFS.nFS4_PROGRAM
 
 nfsNullCall :: RPC.Client -> IO ()
 nfsNullCall client =
-  RPC.rpcCall' client $ RPC.Call (NFS.nFSPROC4_NULL procs) RPC.AuthNone RPC.AuthNone ()
+  RPC.rpcCall client (NFS.nFSPROC4_NULL procs) ()
 
 nfsCall :: RPC.Client -> V.Vector NFS.Nfs_argop4 -> IO (V.Vector NFS.Nfs_resop4)
 nfsCall client args = do
-  NFS.COMPOUND4res stat _ res <- RPC.rpcCall' client $ RPC.Call (NFS.nFSPROC4_COMPOUND procs) RPC.AuthNone RPC.AuthNone
+  NFS.COMPOUND4res stat _ res <- RPC.rpcCall client (NFS.nFSPROC4_COMPOUND procs)
     $ NFS.COMPOUND4args emptyBoundedLengthArray NFS.nFS4_MINOR_VERS $ lengthArray' args
   if stat /= NFS.NFS4_OK
     then fail $ "NFS error: " ++ show stat
