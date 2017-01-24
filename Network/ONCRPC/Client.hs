@@ -17,7 +17,7 @@ module Network.ONCRPC.Client
 
 import           Control.Concurrent (ThreadId, forkIO, killThread, threadDelay)
 import           Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, takeMVar, modifyMVar, modifyMVar_, modifyMVarMasked)
-import           Control.Exception (throw)
+import           Control.Exception (throwIO)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.IntMap.Strict as IntMap
 import           Data.Time.Clock (getCurrentTime, diffUTCTime)
@@ -178,5 +178,5 @@ clientCall c a = do
 -- This uses the credentials set by 'setClientAuth'.
 -- If you need to retrieve the auth verifier, use 'clientCall'.
 rpcCall :: (XDR.XDR a, XDR.XDR r) => Client -> Procedure a r -> a -> IO r
-rpcCall c p a = either throw return . replyResult
+rpcCall c p a = either throwIO return . replyResult
   =<< clientCall c (Call p (clientCred c) (clientVerf c) a)
