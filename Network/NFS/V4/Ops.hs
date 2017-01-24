@@ -6,11 +6,14 @@
 -- {-# OPTIONS_GHC -ddump-splices #-}
 module Network.NFS.V4.Ops
   ( NFSOp(..)
+  , nfsOp
+  , nfsOp_
+  , nfsOpCall
   ) where
 
 import           Control.Exception (throw)
-import           Data.Foldable (fold)
 import           Data.List ((\\))
+import           Data.Maybe (fromMaybe)
 import qualified Data.Vector as V
 import qualified Network.ONCRPC as RPC
 
@@ -40,23 +43,55 @@ instance NFSOp NFS.Secinfo_style4 SECINFO_NO_NAME4res where
 
 
 data NFSOpCall a
-  = NFSOpInit a
-  | forall b . NFSOpAdd
+  = NFSOpNull a
+  | forall b . NFSOpThen
     { nfsOpInit :: NFSOpCall b
     , nfsOpArg :: NFS.Nfs_argop4
     , nfsOpHandler :: NFS.Nfs_resop4 -> b -> a
     }
 
-data NFSOpItem w = NFSOpItem
-  { nfsOpItemArg :: NFS.Nfs_argop4
-  , nfsOpItemHandler :: NFS.Nfs_resop4 -> w
-  }
+instance Functor NFSOpCall where
+  fmap f (NFSOpNull a) = NFSOpNull (f a)
+  fmap f (NFSOpThen i a h) = NFSOpThen i a ((f .) . h)
 
-nfsOp :: NFSOp a r => a -> (r -> w) -> NFSOpItem w
-nfsOp a f = NFSOpItem (toNFSOpArg a)
-  $ maybe (throw $ NFSException (Just $ nfsOpNum a) Nothing) f . fromNFSOpRes
+-- |Ops are applied in reverse order.
+-- This (aka, @**@) seems to be easier to implement than <*>
+nfsOpPair :: NFSOpCall a -> NFSOpCall b -> NFSOpCall (a, b)
+nfsOpPair (NFSOpNull a) (NFSOpNull b) =
+  NFSOpNull (a, b)
+nfsOpPair (NFSOpNull a) (NFSOpThen bi ba bh) =
+  NFSOpThen bi ba (\r b -> (a, bh r b))
+nfsOpPair (NFSOpThen ai aa ah) bc =
+  NFSOpThen (nfsOpPair ai bc) aa (\r (a, b) -> (ah r a, b))
 
-nfsOpCall :: Monoid w => RPC.Client -> [NFSOpItem w] -> IO w
+-- |Note that the resulting order is the reverse of what you might expect:
+-- @f <*> a@ layers the @f@ ops on top of (i.e., after) the @a@ ops.
+instance Applicative NFSOpCall where
+  pure = NFSOpNull
+  NFSOpNull f <*> x = fmap f x
+  f <*> NFSOpNull x = fmap ($ x) f
+  NFSOpThen fi fa fh <*> x = NFSOpThen (nfsOpPair fi x) fa (uncurry . fh)
+  NFSOpNull _ *> b = b
+  NFSOpThen ai aa _ *> b = NFSOpThen (ai *> b) aa (const id)
+  NFSOpNull a <* b = a <$ b
+  NFSOpThen ai aa ah <* b = NFSOpThen (ai <* b) aa ah
+
+nfsOp :: NFSOp a r => a -> (r -> b -> c) -> NFSOpCall b -> NFSOpCall c
+nfsOp a f i = NFSOpThen i (toNFSOpArg a)
+  $ f . fromMaybe (throw $ NFSException (Just $ nfsOpNum a) Nothing) . fromNFSOpRes
+
+nfsOp_ :: NFSOp a r => a -> NFSOpCall b -> NFSOpCall b
+nfsOp_ a i = NFSOpThen i (toNFSOpArg a) $ const id
+
+nfsOpCallArgs :: NFSOpCall a -> V.Vector NFS.Nfs_argop4
+nfsOpCallArgs (NFSOpNull _) = V.empty
+nfsOpCallArgs (NFSOpThen i a _) = nfsOpCallArgs i `V.snoc` a
+
+nfsOpCallProc :: NFSOpCall a -> V.Vector NFS.Nfs_resop4 -> a
+nfsOpCallProc (NFSOpNull r) _ = r
+nfsOpCallProc (NFSOpThen i _ h) v = h (V.last v) $ nfsOpCallProc i (V.init v)
+
+nfsOpCall :: RPC.Client -> NFSOpCall a -> IO a
 nfsOpCall client ops = do
-  r <- nfsCall client $ V.fromList $ map nfsOpItemArg ops
-  return $ fold $ zipWith nfsOpItemHandler ops $ V.toList r
+  r <- nfsCall client $ nfsOpCallArgs ops
+  return $ nfsOpCallProc ops r
