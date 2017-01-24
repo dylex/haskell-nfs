@@ -38,7 +38,7 @@ opGetFileHandle = V.singleton NFS.Nfs_argop4'OP_GETFH
 
 nfsGetFileHandle :: Client -> FilePath -> IO FileHandle
 nfsGetFileHandle client p = do
-  res <- nfsCall client $ opFileReference (absoluteFileReference $ map (NFSStrCS . T.pack) $ splitDirectories $ makeRelative "/" p) <> opGetFileHandle
+  (_, res) <- nfsCall client $ opFileReference (absoluteFileReference $ map (NFSStrCS . T.pack) $ splitDirectories $ makeRelative "/" p) <> opGetFileHandle
   case V.last res of
     NFS.Nfs_resop4'OP_GETFH (NFS.GETFH4res'NFS4_OK (NFS.GETFH4resok h)) -> return h
     NFS.Nfs_resop4'OP_GETFH (NFS.GETFH4res'default stat) -> fail $ "GETFH error: " ++ show stat
