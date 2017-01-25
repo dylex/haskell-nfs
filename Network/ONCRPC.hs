@@ -4,12 +4,14 @@
 
 module Network.ONCRPC
   ( module Network.ONCRPC.XDR
+  , module Network.ONCRPC.Auth
   , module Network.ONCRPC.Message
   , module Network.ONCRPC.Exception
   , module Network.ONCRPC.Client
   ) where
 
 import Network.ONCRPC.XDR
-import Network.ONCRPC.Message (Auth(..), Call(..), Reply(..), ReplyException)
+import Network.ONCRPC.Auth hiding (opacifyAuth, unopacifyAuth)
+import Network.ONCRPC.Message (Call(..), Reply(..), ReplyException)
 import Network.ONCRPC.Exception (RPCException)
 import Network.ONCRPC.Client

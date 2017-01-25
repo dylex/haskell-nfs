@@ -3,8 +3,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Message
-  ( Auth(..)
-  , Call(..)
+  ( Call(..)
   , Reply(..)
   , ReplyException
   , replyResult
@@ -20,35 +19,11 @@ import           Data.Typeable (Typeable)
 import           Data.Void (Void)
 
 import qualified Network.ONCRPC.XDR as XDR
-import           Network.ONCRPC.XDR.Array
 import           Network.ONCRPC.XDR.Serial
-import           Network.ONCRPC.XDR.Opaque
+import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
 import           Network.ONCRPC.Exception
-import qualified Network.ONCRPC.Prot as RPC
-
--- |More translucent version of 'RPC.Opaque_auth' union (not expressible in XDR)
-data Auth
-  = AuthNone
-  | AuthSys !RPC.Authsys_parms
-  | AuthOpaque !RPC.Opaque_auth
-  deriving (Eq, Show)
-
-opacifyAuth :: Auth -> RPC.Opaque_auth
-opacifyAuth AuthNone    = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_NONE) $ emptyBoundedLengthArray
-opacifyAuth (AuthSys s) = RPC.Opaque_auth (xdrFromEnum RPC.AUTH_SYS)  $ toOpaque' s
-opacifyAuth (AuthOpaque o) = o
-
-unopacifyAuth :: RPC.Opaque_auth -> Auth
-unopacifyAuth o@(RPC.Opaque_auth n b) = case xdrToEnum n of
-  Just RPC.AUTH_NONE -> AuthNone
-  Just RPC.AUTH_SYS | Just s <- fromOpaque b -> AuthSys s
-  _ -> AuthOpaque o
-
-instance XDR.XDR Auth where
-  xdrType _ = "translucent_auth"
-  xdrPut = xdrPut . opacifyAuth
-  xdrGet = unopacifyAuth <$> xdrGet
+import           Network.ONCRPC.Auth
 
 -- |'RPC.Call_body' with parameters
 data Call a r = Call

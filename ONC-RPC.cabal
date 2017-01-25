@@ -40,6 +40,7 @@ library
     Network.ONCRPC.Types
     Network.ONCRPC.Prot
     Network.ONCRPC.Exception
+    Network.ONCRPC.Auth
     Network.ONCRPC.Message
     Network.ONCRPC.Client
     Network.ONCRPC
@@ -65,6 +66,10 @@ library
     random,
     time,
     vector
+
+  if !os(windows)
+    build-depends:
+      unix
 
 executable hsrpcgen
   hs-source-dirs: tools

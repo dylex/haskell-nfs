@@ -20,12 +20,14 @@ module Network.ONCRPC.XDR.Array
   , lengthArray
   , lengthArray'
   , boundLengthArray
+  , boundLengthArrayFromList
   , padLengthArray
   , emptyFixedLengthArray
   , emptyBoundedLengthArray
   , expandBoundedLengthArray
   , boundFixedLengthArray
   , appendLengthArray
+  , fromLengthList
   ) where
 
 import           Prelude hiding (length, take, drop, replicate)
@@ -50,6 +52,7 @@ class (Monoid a, HasLength a) => Array a where
   type Elem a :: *
   take :: Int -> a -> a
   replicate :: Int -> Elem a -> a
+  fromList :: [Elem a] -> a
 
 instance HasLength [a] where
   length = List.length
@@ -59,6 +62,7 @@ instance Array [a] where
   type Elem [a] = a
   take = List.take
   replicate = List.replicate
+  fromList = id
 
 instance HasLength (V.Vector a) where
   length = V.length
@@ -66,6 +70,7 @@ instance Array (V.Vector a) where
   type Elem (V.Vector a) = a
   take = V.take
   replicate = V.replicate
+  fromList = V.fromList
 
 instance HasLength BS.ByteString where
   length = BS.length
@@ -73,6 +78,7 @@ instance Array BS.ByteString where
   type Elem BS.ByteString = Word8
   take = BS.take
   replicate = BS.replicate
+  fromList = BS.pack
 
 instance HasLength BSL.ByteString where
   length = fromIntegral . BSL.length
@@ -85,6 +91,7 @@ instance Array BSL.ByteString where
   type Elem BSL.ByteString = Word8
   take = BSL.take . fromIntegral
   replicate = BSL.replicate . fromIntegral
+  fromList = BSL.pack
 
 class KnownOrdering (o :: Ordering) where
   orderingVal :: proxy o -> Ordering
@@ -153,6 +160,11 @@ boundLengthArray :: (KnownNat n, Array a) => a -> LengthArray 'LT n a
 boundLengthArray a = l where
   l = LengthArray $ take (boundedLengthArrayBound l) a
 
+-- |Create a 'BoundedLengthArray' by trimming the given array if necessary.
+boundLengthArrayFromList :: (KnownNat n, Array a) => [Elem a] -> LengthArray 'LT n a
+boundLengthArrayFromList a = l where
+  l = LengthArray $ fromList $ take (boundedLengthArrayBound l) a
+
 -- |Create a 'FixedLengthArray' by trimming or padding (on the right) as necessary.
 padLengthArray :: (KnownNat n, Array a) => a -> Elem a -> LengthArray 'EQ n a
 padLengthArray a p = l where
@@ -188,3 +200,6 @@ boundFixedLengthArray = LengthArray . unLengthArray
 -- |Append to two 'LengthArray's.
 appendLengthArray :: Monoid a => LengthArray o n a -> LengthArray o m a -> LengthArray o (n + m) a
 appendLengthArray (LengthArray a) (LengthArray b) = LengthArray $ mappend a b
+
+fromLengthList :: Array a => LengthArray o n [Elem a] -> LengthArray o n a
+fromLengthList = LengthArray . fromList . unLengthArray

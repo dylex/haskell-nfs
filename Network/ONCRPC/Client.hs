@@ -29,6 +29,7 @@ import           System.Random (randomIO)
 import qualified Network.ONCRPC.XDR as XDR
 import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
+import           Network.ONCRPC.Auth
 import           Network.ONCRPC.Message
 import           Network.ONCRPC.Transport
 
