@@ -14,6 +14,7 @@ import qualified Network.Socket as Net
 
 import qualified Network.NFS.V4.Prot as NFS
 import           Network.NFS.V4.Exception (NFSException(..))
+import           Network.NFS.V4.Ops
 
 openClient :: Net.HostName -> IO RPC.Client
 openClient h = RPC.openClient $ RPC.ClientServerPort h "nfs"
@@ -87,8 +88,8 @@ nfs_resop4'status (NFS.Nfs_resop4'OP_RECLAIM_COMPLETE     r) = NFS.rECLAIM_COMPL
 nfs_resop4'status (NFS.Nfs_resop4'OP_ILLEGAL              r) = NFS.iLLEGAL4res'status r
 
 -- |Make a compound NFS call, returning a vector of results, or throwing an 'NFSException' on any NFS error or result mismatch.
-nfsCall :: RPC.Client -> V.Vector NFS.Nfs_argop4 -> IO (V.Vector NFS.Nfs_resop4)
-nfsCall client arg = do
+nfsCall :: RPC.Client -> NFSOps a -> IO a
+nfsCall client ops = do
   NFS.COMPOUND4res stat _ lres <- RPC.rpcCall client (NFS.nFSPROC4_COMPOUND procs)
     $ NFS.COMPOUND4args emptyBoundedLengthArray NFS.nFS4_MINOR_VERS $ lengthArray' arg
   let res = unLengthArray lres
@@ -98,10 +99,11 @@ nfsCall client arg = do
       $ throwIO $ NFSException (Just $ NFS.nfs_argop4'argop a) Nothing)
     arg res
   case compare (V.length res) (V.length arg) of
-    EQ -> return res
+    EQ -> return $ nfsOpHandler ops res
     LT -> bad $ NFS.nfs_argop4'argop $ arg V.! V.length res
     GT -> bad $ NFS.nfs_resop4'resop $ res V.! V.length arg
   where
+  arg = nfsOpArgs ops
   chkerr _ NFS.NFS4_OK = return ()
   chkerr op s = throwIO $ NFSException op (Just s)
   bad op = throwIO $ NFSException (Just op) Nothing

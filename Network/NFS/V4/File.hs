@@ -37,4 +37,4 @@ opGetFileHandle = nfsOp NFS.GETFH4args $ NFS.gETFH4resok'object . NFS.gETFH4res'
 
 nfsGetFileHandle :: Client -> FilePath -> IO FileHandle
 nfsGetFileHandle client p =
-  nfsOpCall client $ opGetFileHandle <* opFileReference (absoluteFileReference $ map (NFSStrCS . T.pack) $ splitDirectories $ makeRelative "/" p) 
+  nfsCall client $ opGetFileHandle <* opFileReference (absoluteFileReference $ map (NFSStrCS . T.pack) $ splitDirectories $ makeRelative "/" p) 
