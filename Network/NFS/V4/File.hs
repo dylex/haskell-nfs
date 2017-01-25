@@ -2,15 +2,14 @@ module Network.NFS.V4.File
   ( nfsGetFileHandle
   ) where
 
-import           Data.Monoid ((<>))
 import qualified Data.Text as T
-import qualified Data.Vector as V
 import           Network.ONCRPC.XDR.Opaque (toOpaque')
 import           System.FilePath (splitDirectories, makeRelative)
 
 import qualified Network.NFS.V4.Prot as NFS
 import           Network.NFS.V4.String
 import           Network.NFS.V4.Client
+import           Network.NFS.V4.Ops as NFS
 
 type FileHandle = NFS.Nfs_fh4
 type FileName = NFSStrCS
@@ -27,19 +26,15 @@ relativeFileReference = foldl FileLookup
 absoluteFileReference :: [FileName] -> FileReference
 absoluteFileReference = relativeFileReference FileRoot
 
-opFileReference :: FileReference -> V.Vector NFS.Nfs_argop4
-opFileReference FileRoot = V.singleton $ NFS.Nfs_argop4'OP_PUTROOTFH
-opFileReference (FileHandle h) = V.singleton $ NFS.Nfs_argop4'OP_PUTFH $ NFS.PUTFH4args h
-opFileReference (FileLookup r n) = opFileReference r `V.snoc` NFS.Nfs_argop4'OP_LOOKUP (NFS.LOOKUP4args $ toOpaque' n)
-opFileReference (FileParent r) = opFileReference r `V.snoc` NFS.Nfs_argop4'OP_LOOKUPP
+opFileReference :: FileReference -> NFSOps ()
+opFileReference FileRoot = nfsOp_ NFS.PUTROOTFH4args
+opFileReference (FileHandle h) = nfsOp_ $ NFS.PUTFH4args h
+opFileReference (FileLookup r n) = nfsOp_ (NFS.LOOKUP4args $ toOpaque' n) <* opFileReference r 
+opFileReference (FileParent r) = nfsOp_ NFS.LOOKUPP4args <* opFileReference r
 
-opGetFileHandle :: V.Vector NFS.Nfs_argop4
-opGetFileHandle = V.singleton NFS.Nfs_argop4'OP_GETFH
+opGetFileHandle :: NFSOps FileHandle
+opGetFileHandle = nfsOp NFS.GETFH4args $ NFS.gETFH4resok'object . NFS.gETFH4res'resok4
 
 nfsGetFileHandle :: Client -> FilePath -> IO FileHandle
-nfsGetFileHandle client p = do
-  res <- nfsCall client $ opFileReference (absoluteFileReference $ map (NFSStrCS . T.pack) $ splitDirectories $ makeRelative "/" p) <> opGetFileHandle
-  case V.last res of
-    NFS.Nfs_resop4'OP_GETFH (NFS.GETFH4res'NFS4_OK (NFS.GETFH4resok h)) -> return h
-    NFS.Nfs_resop4'OP_GETFH (NFS.GETFH4res'default stat) -> fail $ "GETFH error: " ++ show stat
-    r -> fail $ "Unexpected resop: " ++ show (NFS.nfs_resop4'resop r)
+nfsGetFileHandle client p =
+  nfsOpCall client $ opGetFileHandle <* opFileReference (absoluteFileReference $ map (NFSStrCS . T.pack) $ splitDirectories $ makeRelative "/" p) 

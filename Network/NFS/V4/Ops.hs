@@ -6,10 +6,23 @@
 -- {-# OPTIONS_GHC -ddump-splices #-}
 module Network.NFS.V4.Ops
   ( NFSOp(..)
+  , GETFH4args(..)
+  , LOOKUPP4args(..)
+  , PUTPUBFH4args(..)
+  , PUTROOTFH4args(..)
+  , READLINK4args(..)
+  , RESTOREFH4args(..)
+  , SAVEFH4args(..)
+  , ILLEGAL4args(..)
+  , SECINFO_NO_NAME4res(..)
+
+  , NFSOps
   , nfsOp
   , nfsOp_
   , nfsOpCall
   ) where
+
+
 
 import           Control.Exception (throw)
 import           Data.List ((\\))
@@ -20,8 +33,8 @@ import qualified Network.ONCRPC as RPC
 
 import qualified Network.NFS.V4.Prot as NFS
 import           Network.NFS.V4.Exception
-import           Network.NFS.V4.Ops.TH
 import           Network.NFS.V4.Client (nfsCall)
+import           Network.NFS.V4.Ops.TH
 
 class (RPC.XDR a, RPC.XDR r) => NFSOp a r | r -> a, a -> r where
   nfsOpNum :: a -> NFS.Nfs_opnum4
