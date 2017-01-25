@@ -1,6 +1,8 @@
 module Network.NFS.V4.Client
-  ( RPC.Client
+  ( Client
   , openClient
+  , closeClient
+  , setClientAuth
   , nfsNullCall
   , nfsCall
   ) where
@@ -16,8 +18,38 @@ import qualified Network.NFS.V4.Prot as NFS
 import           Network.NFS.V4.Exception (NFSException(..))
 import           Network.NFS.V4.Ops
 
-openClient :: Net.HostName -> IO RPC.Client
-openClient h = RPC.openClient $ RPC.ClientServerPort h "nfs"
+data Client = Client
+  { clientRPC :: RPC.Client
+  , clientMinorVers :: RPC.UnsignedInt
+  }
+
+-- |See 'RPC.setClientAuth'.
+setClientAuth :: RPC.Auth -> RPC.Auth -> Client -> Client
+setClientAuth cred verf client = client
+  { clientRPC = RPC.setClientAuth cred verf (clientRPC client) }
+
+-- |See 'RPC.openClient'.
+-- In addition, this negotiates a minor version and other client information with the server.
+openClient :: Net.HostName -> IO Client
+openClient h = do
+  rpc <- RPC.openClient $ RPC.ClientServerPort h "nfs"
+  let tryminor 0 = return 0
+      tryminor m = do
+        NFS.COMPOUND4res stat _ _ <- RPC.rpcCall rpc (NFS.nFSPROC4_COMPOUND procs)
+          $ NFS.COMPOUND4args emptyBoundedLengthArray m emptyBoundedLengthArray
+        case stat of
+          NFS.NFS4ERR_MINOR_VERS_MISMATCH -> tryminor $ pred m
+          NFS.NFS4_OK -> return m
+          s -> throwIO $ NFSException Nothing (Just s)
+  minor <- tryminor NFS.nFS4_MINOR_VERS
+  return $ Client
+    { clientRPC = rpc
+    , clientMinorVers = minor
+    }
+
+-- |See 'RPC.closeClient'.
+closeClient :: Client -> IO ()
+closeClient = RPC.closeClient . clientRPC
 
 procs :: NFS.NFS_V4
 procs = NFS.nFS_V4 NFS.nFS4_PROGRAM
@@ -88,10 +120,10 @@ nfs_resop4'status (NFS.Nfs_resop4'OP_RECLAIM_COMPLETE     r) = NFS.rECLAIM_COMPL
 nfs_resop4'status (NFS.Nfs_resop4'OP_ILLEGAL              r) = NFS.iLLEGAL4res'status r
 
 -- |Make a compound NFS call, returning a vector of results, or throwing an 'NFSException' on any NFS error or result mismatch.
-nfsCall :: RPC.Client -> NFSOps a -> IO a
+nfsCall :: Client -> NFSOps a -> IO a
 nfsCall client ops = do
-  NFS.COMPOUND4res stat _ lres <- RPC.rpcCall client (NFS.nFSPROC4_COMPOUND procs)
-    $ NFS.COMPOUND4args emptyBoundedLengthArray NFS.nFS4_MINOR_VERS $ lengthArray' arg
+  NFS.COMPOUND4res stat _ lres <- RPC.rpcCall (clientRPC client) (NFS.nFSPROC4_COMPOUND procs)
+    $ NFS.COMPOUND4args emptyBoundedLengthArray (clientMinorVers client) $ lengthArray' arg
   let res = unLengthArray lres
   mapM_ (\r -> chkerr (Just $ NFS.nfs_resop4'resop r) $ nfs_resop4'status r) res
   chkerr Nothing stat
