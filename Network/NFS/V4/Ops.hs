@@ -22,10 +22,7 @@ module Network.NFS.V4.Ops
   , nfsOpCall
   ) where
 
-
-
 import           Control.Exception (throw)
-import           Data.List ((\\))
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
 import qualified Data.Vector as V
@@ -41,7 +38,20 @@ class (RPC.XDR a, RPC.XDR r) => NFSOp a r | r -> a, a -> r where
   toNFSOpArg :: a -> NFS.Nfs_argop4
   fromNFSOpRes :: NFS.Nfs_resop4 -> Maybe r
 
-thNFSOps $ enumFromTo minBound maxBound \\ [NFS.OP_SECINFO_NO_NAME]
+thNFSOps
+  -- void args:
+  [ NFS.OP_GETFH
+  , NFS.OP_LOOKUPP
+  , NFS.OP_PUTPUBFH
+  , NFS.OP_PUTROOTFH
+  , NFS.OP_READLINK
+  , NFS.OP_RESTOREFH
+  , NFS.OP_SAVEFH
+  , NFS.OP_ILLEGAL
+  ]
+  -- exclude:
+  [ NFS.OP_SECINFO_NO_NAME
+  ]
 
 newtype SECINFO_NO_NAME4res = SECINFO_NO_NAME4res{ sECINFO_NO_NAME4res :: NFS.SECINFO4res }
 instance RPC.XDR SECINFO_NO_NAME4res where
