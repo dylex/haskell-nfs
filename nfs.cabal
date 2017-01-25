@@ -1,6 +1,6 @@
-name:                hnfs
+name:                nfs
 version:             0
-synopsis:            NFS client library
+synopsis:            NFSv4 client library
 description:         
 license:             Apache-2.0
 license-file:        LICENSE
@@ -14,7 +14,7 @@ tested-with:         GHC == 7.10.3, GHC == 8.0.1
 
 source-repository head
   type: git
-  location: https://github.com/dylex/hnfs
+  location: https://github.com/dylex/haskell-nfs
 
 custom-setup
   setup-depends:
