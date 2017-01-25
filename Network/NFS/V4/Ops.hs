@@ -80,7 +80,7 @@ instance Functor NFSOps where
 -- This better matches the state-transformation semantics of NFS4 compound operations.
 instance Applicative NFSOps where
   pure x = NFSOps V.empty (const x)
-  NFSOps fa fh <*> NFSOps xa xh = NFSOps (fa <> xa) $ \r ->
+  NFSOps fa fh <*> NFSOps xa xh = NFSOps (xa <> fa) $ \r ->
     fh (V.drop xn r) $ xh (V.take xn r)
     where xn = V.length xa
 
