@@ -1,5 +1,6 @@
 -- |Automatic code generation for NFSOp.
 -- One of those cases where it ended up being more work to automate, what with all the exceptions.
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Network.NFS.V4.Ops.TH
   ( thNFSOps
@@ -12,12 +13,18 @@ import qualified Network.ONCRPC as RPC
 
 import qualified Network.NFS.V4.Prot as NFS
 
+#if MIN_VERSION_template_haskell(2,11,0)
+#define Nothing_2_11 Nothing
+#else
+#define Nothing_2_11
+#endif
+
 thNFSOps :: [NFS.Nfs_opnum4] -> [NFS.Nfs_opnum4] -> TH.DecsQ
 thNFSOps voidl excl = return $
   concatMap (\op ->
       let args = opname op "" "4args" in
-      [ TH.DataD [] args [] Nothing [TH.NormalC args []] []
-      , TH.InstanceD Nothing [] (TH.ConT ''RPC.XDR `TH.AppT` TH.ConT args)
+      [ TH.DataD [] args [] Nothing_2_11 [TH.NormalC args []] []
+      , TH.InstanceD Nothing_2_11 [] (TH.ConT ''RPC.XDR `TH.AppT` TH.ConT args)
         [ TH.FunD 'RPC.xdrType [TH.Clause [TH.WildP] (TH.NormalB $ TH.LitE $ TH.StringL $ TH.nameBase args) []]
         , TH.FunD 'RPC.xdrPut [TH.Clause [TH.WildP] (TH.NormalB $ TH.VarE 'return `TH.AppE` TH.ConE '()) []]
         , TH.FunD 'RPC.xdrGet [TH.Clause [] (TH.NormalB $ TH.VarE 'return `TH.AppE` TH.ConE args) []]
@@ -28,7 +35,7 @@ thNFSOps voidl excl = return $
       let opn = opname op
           void = Set.member op voids
           qual = if void then "" else "NFS." in
-      TH.InstanceD Nothing [] (nfsOp `TH.AppT` TH.ConT (qual `opn` "4args") `TH.AppT` TH.ConT ("NFS." `opn` "4res"))
+      TH.InstanceD Nothing_2_11 [] (nfsOp `TH.AppT` TH.ConT (qual `opn` "4args") `TH.AppT` TH.ConT ("NFS." `opn` "4res"))
         [ TH.FunD nfsOpNum [TH.Clause [TH.WildP] (TH.NormalB $ TH.ConE $ "NFS.OP_" `opn` "") []]
         , TH.FunD toNFSArgOp [TH.Clause (if void then [TH.WildP] else []) (TH.NormalB $ TH.ConE $ "NFS.Nfs_argop4'OP_" `opn` "") []]
         , TH.FunD fromNFSResOp
