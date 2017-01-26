@@ -36,7 +36,7 @@ opFileReference (FileLookup r n) = nfsOp_ (NFS.LOOKUP4args $ toOpaque' n) <* opF
 opFileReference (FileParent r) = nfsOp_ NFS.LOOKUPP4args <* opFileReference r
 
 opGetFileHandle :: NFSOps FileHandle
-opGetFileHandle = nfsOp NFS.GETFH4args $ NFS.gETFH4resok'object . NFS.gETFH4res'resok4
+opGetFileHandle = NFS.gETFH4resok'object . NFS.gETFH4res'resok4 <$> nfsOp NFS.GETFH4args
 
 opUpdateFileReference :: FileReference -> NFSOps FileReference
 opUpdateFileReference FileRoot = pure FileRoot

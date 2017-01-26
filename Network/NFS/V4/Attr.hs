@@ -2,7 +2,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- {-# OPTIONS_GHC -ddump-splices #-}
 module Network.NFS.V4.Attr
-  ( NFSAttrVal(..)
+  ( enpackBitmap
+  , depackBitmap
+  , NFSAttrType(..)
+  , NFSAttrVal(..)
   , encodeNFSAttrs
   , decodeNFSAttrs
   ) where

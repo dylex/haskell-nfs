@@ -24,6 +24,7 @@ module Network.NFS.V4.Ops
   ) where
 
 import           Control.Exception (throw)
+import           Data.Functor (void)
 import           Data.Maybe (fromMaybe)
 import           Data.Monoid ((<>))
 import qualified Data.Vector as V
@@ -84,9 +85,9 @@ instance Applicative NFSOps where
     fh (V.drop xn r) $ xh (V.take xn r)
     where xn = V.length xa
 
-nfsOp :: NFSOp a r => a -> (r -> b) -> NFSOps b
-nfsOp a f = NFSOps (V.singleton $ toNFSOpArg a)
-  $ f . fromMaybe (throw $ NFSException (Just $ nfsOpNum a) Nothing) . fromNFSOpRes . V.head
+nfsOp :: NFSOp a r => a -> NFSOps r
+nfsOp a = NFSOps (V.singleton $ toNFSOpArg a)
+  $ fromMaybe (throw $ NFSException (Just $ nfsOpNum a) Nothing) . fromNFSOpRes . V.head
 
 nfsOp_ :: NFSOp a r => a -> NFSOps ()
-nfsOp_ a = nfsOp a (const ())
+nfsOp_ = void . nfsOp
