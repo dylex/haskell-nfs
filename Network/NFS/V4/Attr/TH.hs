@@ -27,7 +27,11 @@ thNFSAttr :: [String] -> TH.DecsQ
 thNFSAttr attrs = return
   [ TH.DataD [] nfstype [] Nothing_2_11
     (forAttrs $ \a -> TH.NormalC (ntype a) [])
-    (map TH.ConT [''Eq, ''Ord, ''Enum, ''Bounded, ''Show])
+    (
+#if MIN_VERSION_template_haskell(2,11,0)
+      map TH.ConT
+#endif
+      [''Eq, ''Ord, ''Enum, ''Bounded, ''Show])
   , TH.InstanceD Nothing_2_11 [] (TH.ConT ''RPC.XDREnum `TH.AppT` TH.ConT nfstype)
     [ TH.FunD 'RPC.xdrFromEnum $ forAttrs $ \a ->
         TH.Clause [TH.ConP (ntype a) []]
@@ -41,8 +45,18 @@ thNFSAttr attrs = return
         []]
     ]
   , TH.DataD [] nfsval [] Nothing_2_11
-    (forAttrs $ \a -> TH.NormalC (nval a) [(TH.Bang TH.NoSourceUnpackedness TH.SourceStrict, fval a)])
-    (map TH.ConT [''Eq, ''Show])
+    (forAttrs $ \a -> TH.NormalC (nval a) [(
+#if MIN_VERSION_template_haskell(2,11,0)
+      TH.Bang TH.NoSourceUnpackedness TH.SourceStrict
+#else
+      TH.IsStrict
+#endif
+      , fval a)])
+    (
+#if MIN_VERSION_template_haskell(2,11,0)
+      map TH.ConT
+#endif
+      [''Eq, ''Show])
   , TH.SigD (TH.mkName "nfsAttrType") $ TH.ArrowT `TH.AppT` TH.ConT nfsval `TH.AppT` TH.ConT nfstype
   , TH.FunD (TH.mkName "nfsAttrType") $ forAttrs $ \a ->
       TH.Clause [TH.ConP (nval a) [TH.WildP]] (TH.NormalB $ TH.ConE $ ntype a) []

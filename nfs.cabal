@@ -44,7 +44,7 @@ library
     containers,
     filepath,
     network,
-    template-haskell,
+    template-haskell >= 2.10,
     text,
     vector,
     ONC-RPC
