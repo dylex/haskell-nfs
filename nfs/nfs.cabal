@@ -48,5 +48,6 @@ library
     network,
     template-haskell >= 2.10,
     text,
+    time,
     vector,
     ONC-RPC

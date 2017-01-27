@@ -10,13 +10,17 @@ module Network.NFS.V4.Attr
   , AttrVal(..)
   , encodeAttrs
   , decodeAttrs
+  , decodeTime
+  , encodeTime
   ) where
 
 import           Control.Arrow ((&&&), first, second)
 import           Data.Bits ((.|.), bit, clearBit, finiteBitSize, shiftL, shiftR, testBit, zeroBits)
+import           Data.Fixed (Fixed(..), Nano)
 import           Data.Function (on)
 import qualified Data.List as List
 import qualified Data.Serialize as S
+import           Data.Time.Clock.POSIX (POSIXTime)
 import qualified Data.Vector as V
 import qualified Network.ONCRPC as RPC
 import           Network.ONCRPC.XDR.Array (lengthArray', unLengthArray)
@@ -148,3 +152,9 @@ decodeAttrs (NFS.Fattr4 m o) = S.runGet (mapM getAttr l) $ unLengthArray o
 encodeAttrs :: [AttrVal] -> NFS.Fattr4
 encodeAttrs al = NFS.Fattr4 (enpackBitmap $ map fst l) (lengthArray' $ S.runPut $ mapM_ snd l)
   where l = map head $ List.groupBy ((==) `on` fst) $ List.sortOn fst $ map (attrType &&& putAttr) al
+
+decodeTime :: NFS.Nfstime4 -> POSIXTime
+decodeTime (NFS.Nfstime4 s n) = realToFrac $ (fromIntegral s :: Nano) + MkFixed (toInteger n)
+
+encodeTime :: POSIXTime -> NFS.Nfstime4
+encodeTime t = NFS.Nfstime4 (fromInteger s) (fromInteger n) where (s, MkFixed n) = properFraction (realToFrac t :: Nano)
