@@ -2,12 +2,14 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- {-# OPTIONS_GHC -ddump-splices #-}
 module Network.NFS.V4.Attr
-  ( enpackBitmap
+  ( encodeBitmap
+  , decodeBitmap
+  , enpackBitmap
   , depackBitmap
-  , NFSAttrType(..)
-  , NFSAttrVal(..)
-  , encodeNFSAttrs
-  , decodeNFSAttrs
+  , AttrType(..)
+  , AttrVal(..)
+  , encodeAttrs
+  , decodeAttrs
   ) where
 
 import           Control.Arrow ((&&&), first, second)
@@ -38,6 +40,8 @@ packBitmap :: RPC.XDREnum a => [a] -> Bitmap
 packBitmap [] = zeroBits
 packBitmap (x:l) = bit (fromIntegral $ RPC.xdrFromEnum x) .|. packBitmap l
 
+-- |Find all the bits set in the given bitmap corresponding to the given enum, and return the values and leftover bits.
+-- There should be a better way to do this bit-search-explode operation.
 unpackBitmap :: RPC.XDREnum a => Bitmap -> ([a], Bitmap)
 unpackBitmap 0 = ([], 0)
 unpackBitmap b = ub b 0 where
@@ -52,7 +56,7 @@ enpackBitmap = encodeBitmap . packBitmap
 depackBitmap :: RPC.XDREnum a => NFS.Bitmap4 -> ([a], Bitmap)
 depackBitmap = unpackBitmap . decodeBitmap
 
-thNFSAttr
+thAttr
   [ "SUPPORTED_ATTRS"
   , "TYPE"
   , "FH_EXPIRE_TYPE"
@@ -132,15 +136,15 @@ thNFSAttr
   , "FS_CHARSET_CAP"
   ]
 
-instance RPC.XDR NFSAttrType where
-  xdrType _ = "NFSAttrType"
+instance RPC.XDR AttrType where
+  xdrType _ = "AttrType"
   xdrPut = RPC.xdrPutEnum
   xdrGet = RPC.xdrGetEnum
 
-decodeNFSAttrs :: NFS.Fattr4 -> Either String [NFSAttrVal]
-decodeNFSAttrs (NFS.Fattr4 m o) = S.runGet (mapM nfsGetAttr l) $ unLengthArray o
+decodeAttrs :: NFS.Fattr4 -> Either String [AttrVal]
+decodeAttrs (NFS.Fattr4 m o) = S.runGet (mapM getAttr l) $ unLengthArray o
   where (l, _) = depackBitmap m
 
-encodeNFSAttrs :: [NFSAttrVal] -> NFS.Fattr4
-encodeNFSAttrs al = NFS.Fattr4 (enpackBitmap $ map fst l) (lengthArray' $ S.runPut $ mapM_ snd l)
-  where l = map head $ List.groupBy ((==) `on` fst) $ List.sortOn fst $ map (nfsAttrType &&& nfsPutAttr) al
+encodeAttrs :: [AttrVal] -> NFS.Fattr4
+encodeAttrs al = NFS.Fattr4 (enpackBitmap $ map fst l) (lengthArray' $ S.runPut $ mapM_ snd l)
+  where l = map head $ List.groupBy ((==) `on` fst) $ List.sortOn fst $ map (attrType &&& putAttr) al

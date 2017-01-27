@@ -1,8 +1,8 @@
--- |Automatic code generation for NFSAttr
+-- |Automatic code generation for Attr
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Network.NFS.V4.Attr.TH
-  ( thNFSAttr
+  ( thAttr
   ) where
 
 import           Data.Char (toUpper, toLower)
@@ -23,8 +23,8 @@ toCamel (u:s) = toUpper u : tc s where
   tc [] = []
 toCamel [] = []
 
-thNFSAttr :: [String] -> TH.DecsQ
-thNFSAttr attrs = return
+thAttr :: [String] -> TH.DecsQ
+thAttr attrs = return
   [ TH.DataD [] nfstype [] Nothing_2_11
     (forAttrs $ \a -> TH.NormalC (ntype a) [])
     (
@@ -57,22 +57,22 @@ thNFSAttr attrs = return
       map TH.ConT
 #endif
       [''Eq, ''Show])
-  , TH.SigD (TH.mkName "nfsAttrType") $ TH.ArrowT `TH.AppT` TH.ConT nfsval `TH.AppT` TH.ConT nfstype
-  , TH.FunD (TH.mkName "nfsAttrType") $ forAttrs $ \a ->
+  , TH.SigD (TH.mkName "attrType") $ TH.ArrowT `TH.AppT` TH.ConT nfsval `TH.AppT` TH.ConT nfstype
+  , TH.FunD (TH.mkName "attrType") $ forAttrs $ \a ->
       TH.Clause [TH.ConP (nval a) [TH.WildP]] (TH.NormalB $ TH.ConE $ ntype a) []
-  , TH.SigD (TH.mkName "nfsPutAttr") $ TH.ArrowT `TH.AppT` TH.ConT nfsval `TH.AppT` TH.ConT ''S.Put
-  , TH.FunD (TH.mkName "nfsPutAttr") $ forAttrs $ \a ->
+  , TH.SigD (TH.mkName "putAttr") $ TH.ArrowT `TH.AppT` TH.ConT nfsval `TH.AppT` TH.ConT ''S.Put
+  , TH.FunD (TH.mkName "putAttr") $ forAttrs $ \a ->
       TH.Clause [TH.ConP (nval a) [TH.VarP x]] (TH.NormalB $ TH.VarE 'RPC.xdrPut `TH.AppE` TH.VarE x) []
-  , TH.SigD (TH.mkName "nfsGetAttr") $ TH.ArrowT `TH.AppT` TH.ConT nfstype `TH.AppT` (TH.ConT ''S.Get `TH.AppT` TH.ConT nfsval)
-  , TH.FunD (TH.mkName "nfsGetAttr") $ forAttrs $ \a ->
+  , TH.SigD (TH.mkName "getAttr") $ TH.ArrowT `TH.AppT` TH.ConT nfstype `TH.AppT` (TH.ConT ''S.Get `TH.AppT` TH.ConT nfsval)
+  , TH.FunD (TH.mkName "getAttr") $ forAttrs $ \a ->
       TH.Clause [TH.ConP (ntype a) []] (TH.NormalB $ TH.InfixE (Just $ TH.ConE (nval a)) (TH.VarE '(<$>)) (Just $ TH.VarE 'RPC.xdrGet)) []
   ]
   where
   forAttrs = flip map attrs
   x = TH.mkName "x"
-  nfstype = TH.mkName "NFSAttrType"
-  ntype = TH.mkName . ("NFSAttrType" ++) . toCamel
+  nfstype = TH.mkName "AttrType"
+  ntype = TH.mkName . ("AttrType" ++) . toCamel
   ftype = TH.VarE . TH.mkName . ("NFS.fATTR4_" ++) . map toUpper
-  nfsval = TH.mkName "NFSAttrVal"
-  nval = TH.mkName . ("NFSAttrVal" ++) . toCamel
+  nfsval = TH.mkName "AttrVal"
+  nval = TH.mkName . ("AttrVal" ++) . toCamel
   fval = TH.ConT . TH.mkName . ("NFS.Fattr4_" ++) . map toLower

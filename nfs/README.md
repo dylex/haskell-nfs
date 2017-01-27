@@ -8,8 +8,8 @@ The current focus is a working, user-space, NFSv4 client.
 import qualified Network.NFS.V4 as NFS
 
 client <- NFS.openClient "nfs.server.example.com"
-NFS.REMOVE4res (NFS.REMOVE4res'resok (NFS.REMOVE4resok cinfo)) <-
-  NFS.nfsCall client $ NFS.opFileReference NFS.FileRoot *> NFS.REMOVE4args "delete.me"
+NFS.REMOVE4res'NFS4_OK (NFS.REMOVE4resok cinfo) <-
+  NFS.nfsCall client $ NFS.opFileReference NFS.FileRoot *> NFS.op (NFS.REMOVE4args "delete.me")
 ```
 
 ## References

@@ -120,7 +120,7 @@ nfs_resop4'status (NFS.Nfs_resop4'OP_RECLAIM_COMPLETE     r) = NFS.rECLAIM_COMPL
 nfs_resop4'status (NFS.Nfs_resop4'OP_ILLEGAL              r) = NFS.iLLEGAL4res'status r
 
 -- |Make a compound NFS call, returning a vector of results, or throwing an 'NFSException' on any NFS error or result mismatch.
-nfsCall :: Client -> NFSOps a -> IO a
+nfsCall :: Client -> Ops a -> IO a
 nfsCall client ops = do
   NFS.COMPOUND4res stat _ lres <- RPC.rpcCall (clientRPC client) (NFS.nFSPROC4_COMPOUND procs)
     $ NFS.COMPOUND4args emptyBoundedLengthArray (clientMinorVers client) $ lengthArray' arg
@@ -131,11 +131,11 @@ nfsCall client ops = do
       $ throwIO $ NFSException (Just $ NFS.nfs_argop4'argop a) Nothing)
     arg res
   case compare (V.length res) (V.length arg) of
-    EQ -> return $ nfsOpHandler ops res
+    EQ -> return $ opHandler ops res
     LT -> bad $ NFS.nfs_argop4'argop $ arg V.! V.length res
     GT -> bad $ NFS.nfs_resop4'resop $ res V.! V.length arg
   where
-  arg = nfsOpArgs ops
+  arg = opArgs ops
   chkerr _ NFS.NFS4_OK = return ()
-  chkerr op s = throwIO $ NFSException op (Just s)
-  bad op = throwIO $ NFSException (Just op) Nothing
+  chkerr o s = throwIO $ NFSException o (Just s)
+  bad o = throwIO $ NFSException (Just o) Nothing
