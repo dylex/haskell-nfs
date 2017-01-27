@@ -9,7 +9,7 @@ import qualified Network.NFS.V4 as NFS
 
 client <- NFS.openClient "nfs.server.example.com"
 NFS.REMOVE4res (NFS.REMOVE4res'resok (NFS.REMOVE4resok cinfo)) <-
-  NFS.nfsCall client (NFS.REMOVE4args "delete.me" <* NFS.opFileReference NFS.FileRoot)
+  NFS.nfsCall client $ NFS.opFileReference NFS.FileRoot *> NFS.REMOVE4args "delete.me"
 ```
 
 ## References

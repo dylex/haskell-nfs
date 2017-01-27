@@ -21,8 +21,10 @@ module Network.NFS.V4.Ops
   , nfsOpHandler
   , nfsOp
   , nfsOp_
+  , (>*<)
   ) where
 
+import           Control.Applicative (liftA2)
 import           Control.Exception (throw)
 import           Data.Functor (void)
 import           Data.Maybe (fromMaybe)
@@ -68,6 +70,7 @@ instance NFSOp NFS.Secinfo_style4 SECINFO_NO_NAME4res where
 
 
 -- |A set of compound operations and their handler.
+-- These can be created with 'nfsOp' and combined using the 'Applicative' instance.
 data NFSOps a = NFSOps
   { nfsOpArgs :: V.Vector NFS.Nfs_argop4
   , nfsOpHandler :: V.Vector NFS.Nfs_resop4 -> a
@@ -76,18 +79,23 @@ data NFSOps a = NFSOps
 instance Functor NFSOps where
   fmap f (NFSOps a h) = NFSOps a (f . h)
 
--- |Operations are applied in the reverse order of application:
--- @f <*> a@ layers the @f@ ops on top of (i.e., after) the @a@ ops.
--- This better matches the state-transformation semantics of NFS4 compound operations.
+-- |Operations are performed in order, left-to-right.
+-- Since you often want to transform results in that order as well (i.e., apply a later result to an earlier one), '<**>' can be helpful.
 instance Applicative NFSOps where
   pure x = NFSOps V.empty (const x)
-  NFSOps fa fh <*> NFSOps xa xh = NFSOps (xa <> fa) $ \r ->
-    fh (V.drop xn r) $ xh (V.take xn r)
-    where xn = V.length xa
+  NFSOps fa fh <*> NFSOps xa xh = NFSOps (fa <> xa) $ \r ->
+    fh (V.take fn r) $ xh (V.drop fn r)
+    where fn = V.length fa
 
+-- |A single operation
 nfsOp :: NFSOp a r => a -> NFSOps r
 nfsOp a = NFSOps (V.singleton $ toNFSOpArg a)
   $ fromMaybe (throw $ NFSException (Just $ nfsOpNum a) Nothing) . fromNFSOpRes . V.head
 
+-- |A single operation, ignoring the result value: @'void' . 'nfsOp'@
 nfsOp_ :: NFSOp a r => a -> NFSOps ()
 nfsOp_ = void . nfsOp
+
+-- |The monoidal pair operator, for convenience: @'liftA2' '(,)'@
+(>*<) :: Applicative f => f a -> f b -> f (a, b)
+(>*<) = liftA2 (,)
