@@ -27,6 +27,7 @@ library
     Network.NFS.V4.Prot
     Network.NFS.V4.Attr
     Network.NFS.V4.Client
+    Network.NFS.V4.Exception
     Network.NFS.V4.File
     Network.NFS.V4.Ops
     Network.NFS.V4.String
