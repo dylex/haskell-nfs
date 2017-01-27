@@ -1,0 +1,31 @@
+resolver: nightly-2017-01-26
+extra-deps:
+- invertible-0.1.2
+- web-inv-route-0.1.1
+- postgresql-typed-0.5.0
+packages:
+- location: '.'
+- location:
+    git: git://github.com/dylex/haskell-nfs
+    commit: master
+  extra-dep: true
+- location:
+    git: git://github.com/dylex/oncrpc
+    commit: master
+  extra-dep: true
+- location:
+    git: git://github.com/dylex/waimwork
+    commit: master
+  extra-dep: true
+flags:
+  invertible:
+    TypeCompose: false
+    arrows: false
+    hlist: false
+    partial-isomorphisms: false
+    piso: false
+  web-inv-route:
+    snap: false
+    happstack: false
+explicit-setup-deps:
+  nfs: true
