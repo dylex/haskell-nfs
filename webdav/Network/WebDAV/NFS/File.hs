@@ -8,7 +8,7 @@ module Network.WebDAV.NFS.File
   ) where
 
 import           Control.Monad (unless)
-import           Data.Bits ((.|.))
+import           Data.Bits ((.|.), bit)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import qualified Data.Text as T
@@ -41,7 +41,7 @@ data FileInfo = FileInfo
 getFileInfo :: NFS.Ops FileInfo
 getFileInfo = fi . NFS.decodeAttrs . NFS.gETATTR4resok'obj_attributes . NFS.gETATTR4res'resok4
   <$> NFS.op (NFS.GETATTR4args $ NFS.encodeBitmap $
-    NFS.fATTR4_TYPE .|. NFS.fATTR4_CHANGE .|. NFS.fATTR4_SIZE .|. NFS.fATTR4_TIME_MODIFY)
+    bit NFS.fATTR4_TYPE .|. bit NFS.fATTR4_CHANGE .|. bit NFS.fATTR4_SIZE .|. bit NFS.fATTR4_TIME_MODIFY)
   where
   fi (Right [NFS.AttrValType ftyp, NFS.AttrValChange tag, NFS.AttrValSize size, NFS.AttrValTimeModify mtime]) =
     FileInfo ftyp (buildBS $ BSB.word64Hex tag) size (posixSecondsToUTCTime $ NFS.decodeTime mtime)
