@@ -3,6 +3,7 @@
 {-# LANGUAGE CPP #-}
 module Network.ONCRPC.Auth
   ( Auth(..)
+  , RPC.Authsys_parms(..)
   , opacifyAuth
   , unopacifyAuth
 #ifdef VERSION_unix
