@@ -19,8 +19,6 @@ source-repository head
 library
   exposed-modules:
     Network.WebDAV.NFS
-  other-modules:
-    Network.WebDAV.NFS.Result
   default-language: Haskell2010
   ghc-options: -Wall
   build-depends:       
@@ -30,4 +28,5 @@ library
     text,
     time,
     wai,
+    waimwork,
     nfs

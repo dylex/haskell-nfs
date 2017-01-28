@@ -1,20 +1,30 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 module Network.WebDAV.NFS
   (
   ) where
 
 import           Control.Exception (handle)
-import           Control.Monad (unless)
+import           Control.Monad (when, unless, guard)
 import           Data.Bits ((.|.))
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BSB
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Lazy as BSL
+import           Data.Maybe (mapMaybe)
+import           Data.Monoid ((<>))
 import qualified Data.Text as T
-import           Data.Time.Clock.POSIX (POSIXTime)
+import           Data.Time.Clock (UTCTime)
+import           Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime)
 import           Data.Word (Word64)
 import qualified Network.HTTP.Types as HTTP
+import qualified Network.HTTP.Types.Header as HTTP
 import qualified Network.NFS.V4 as NFS
 import qualified Network.Wai as Wai
 
-import           Network.WebDAV.NFS.Result
+import           Waimwork.Result (result, unsafeResult, resultApplication)
+import           Waimwork.HTTP (splitHTTP, unquoteHTTP, quoteHTTP, parseHTTPDate, formatHTTPDate)
 
 data NFSRoot = NFSRoot
   { nfsClient :: NFS.Client
@@ -22,14 +32,17 @@ data NFSRoot = NFSRoot
   , nfsDotFiles :: Bool
   }
 
+emptyResponse :: HTTP.Status -> HTTP.ResponseHeaders -> Wai.Response
+emptyResponse s h = Wai.responseLBS s h mempty
+
+emptyResult :: HTTP.Status -> HTTP.ResponseHeaders -> IO a
+emptyResult s = result . emptyResponse s
+
 errorResponse :: HTTP.Status -> Wai.Response
-errorResponse s = Wai.responseLBS s [] mempty
+errorResponse s = emptyResponse s []
 
 errorResult :: HTTP.Status -> IO a
 errorResult = result . errorResponse
-
-unsafeErrorResult :: HTTP.Status -> IO a
-unsafeErrorResult = unsafeResult . errorResponse
 
 nfsErrorStatus :: NFS.Nfsstat4 -> HTTP.Status
 nfsErrorStatus NFS.NFS4_OK = HTTP.ok200
@@ -60,9 +73,9 @@ checkAccess a = (`unless` errorResult HTTP.forbidden403) . (a ==) . NFS.aCCESS4r
 
 data FileInfo = FileInfo
   { fileType :: NFS.Nfs_ftype4
-  , fileChange :: NFS.Changeid4
+  , fileETag :: BS.ByteString
   , fileSize :: Word64
-  , fileMTime :: POSIXTime
+  , fileMTime :: UTCTime
   }
 
 getFileInfo :: NFS.Ops FileInfo
@@ -70,19 +83,62 @@ getFileInfo = fi . NFS.decodeAttrs . NFS.gETATTR4resok'obj_attributes . NFS.gETA
   <$> NFS.op (NFS.GETATTR4args $ NFS.encodeBitmap $
     NFS.fATTR4_TYPE .|. NFS.fATTR4_CHANGE .|. NFS.fATTR4_SIZE .|. NFS.fATTR4_TIME_MODIFY)
   where
-  fi (Right [NFS.AttrValType ftyp, NFS.AttrValChange tag, NFS.AttrValSize size, NFS.AttrValTimeModify mtime]) = FileInfo ftyp tag size (NFS.decodeTime mtime)
+  fi (Right [NFS.AttrValType ftyp, NFS.AttrValChange tag, NFS.AttrValSize size, NFS.AttrValTimeModify mtime]) =
+    FileInfo ftyp (BSL.toStrict $ BSB.toLazyByteString $ BSB.word64Hex tag) size (posixSecondsToUTCTime $ NFS.decodeTime mtime)
   fi e = error $ "GETATTR: " ++ show e -- 500 error
+
+get :: NFSRoot -> Wai.Request -> NFS.FileReference -> IO Wai.Response
+get nfs req pathref = do
+  ((ref, access), FileInfo{..}) <-
+    handleNFSException $ NFS.nfsCall (nfsClient nfs)
+      $ NFS.opFileReferenceGet pathref
+      NFS.>*< checkAccess NFS.aCCESS4_READ
+      NFS.>*< getFileInfo
+  access
+  when (fileType /= NFS.NF4REG) $
+    errorResult HTTP.methodNotAllowed405
+  let headers =
+        [ (HTTP.hETag, quoteHTTP fileETag)
+        , (HTTP.hLastModified, formatHTTPDate fileMTime)
+        , (HTTP.hAcceptRanges, "bytes")
+        ]
+      ismat   = all (isent fileETag) ifmat
+      isnomat = all (not . isent fileETag) ifnomat
+      ismod   = all (fileMTime >) ifmod
+      isnomod = all (fileMTime <=) ifnomod
+      isrange = all (either (fileETag ==) (fileMTime <=)) ifrange
+      ranges' = guard isrange >> mapMaybe (checkr . clampr (toInteger fileSize)) <$> ranges
+  unless (isnomat || ismod) $
+    emptyResult HTTP.notModified304 headers
+  unless (ismat || isnomod) $
+    emptyResult HTTP.preconditionFailed412 headers
+  case ranges' of
+    Nothing -> return () -- 200
+    Just [] -> emptyResult HTTP.requestedRangeNotSatisfiable416
+      $ (HTTP.hContentRange, "bytes */" <> BSC.pack (show fileSize)) : headers
+    Just [r] -> return () -- HTTP.partialContent206
+    Just rl -> return () -- "multipart/byteranges"
+  fail "TODO"
+  where
+  ifmat   = splitHTTP     =<< header HTTP.hIfMatch
+  ifnomat = splitHTTP     =<< header HTTP.hIfNoneMatch
+  ifmod   = parseHTTPDate =<< header HTTP.hIfModifiedSince
+  ifnomod = parseHTTPDate =<< header HTTP.hIfUnmodifiedSince
+  ifrange = (\s -> maybe (Left $ unquoteHTTP s) Right $ parseHTTPDate s) <$> header HTTP.hIfRange
+  ranges  = HTTP.parseByteRanges =<< header HTTP.hRange
+  header h = lookup h $ Wai.requestHeaders req
+  isent _ ["*"] = True
+  isent e l = e `elem` l
+  clampr z (HTTP.ByteRangeFrom a) = (a `max` 0, pred z)
+  clampr z (HTTP.ByteRangeFromTo a b) = (a `max` 0, b `min` pred z)
+  clampr z (HTTP.ByteRangeSuffix e) = (z - e `max` 0, pred z)
+  checkr (a, b)
+    | a <= b = Just (fromInteger a, fromInteger b)
+    | otherwise = Nothing
 
 webDAVNFS :: NFSRoot -> Wai.Application
 webDAVNFS nfs = resultApplication $ \req -> do
   pathref <- maybe (errorResult HTTP.notFound404) (return . NFS.relativeFileReference (nfsRoot nfs))
     $ parsePath nfs $ Wai.pathInfo req
   case Wai.requestMethod req of
-    "GET" -> do
-      ((ref, access), info) <-
-        handleNFSException $ NFS.nfsCall (nfsClient nfs)
-          $ NFS.opFileReferenceGet pathref
-          NFS.>*< checkAccess NFS.aCCESS4_READ
-          NFS.>*< getFileInfo
-      access
-      fail "TODO"
+    "GET" -> get nfs req pathref
