@@ -15,7 +15,7 @@ module Network.NFS.V4.Attr
   ) where
 
 import           Control.Arrow ((&&&), first, second)
-import           Data.Bits ((.|.), bit, clearBit, finiteBitSize, shiftL, shiftR, testBit, zeroBits)
+import           Data.Bits ((.|.), bit, complementBit, finiteBitSize, shiftL, shiftR, testBit, zeroBits)
 import           Data.Fixed (Fixed(..), Nano)
 import           Data.Function (on)
 import qualified Data.List as List
@@ -51,7 +51,7 @@ unpackBitmap 0 = ([], 0)
 unpackBitmap b = ub b 0 where
   ub 0 _ = ([], 0)
   ub n i = (if testBit n i
-    then maybe (second (bit i .|.)) (first . (:)) (RPC.xdrToEnum $ fromIntegral i) . ub (clearBit n i)
+    then maybe (second (bit i .|.)) (first . (:)) (RPC.xdrToEnum $ fromIntegral i) . ub (complementBit n i)
     else ub n) (succ i)
 
 enpackBitmap :: RPC.XDREnum a => [a] -> NFS.Bitmap4

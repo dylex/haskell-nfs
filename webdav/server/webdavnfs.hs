@@ -1,7 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
-import           Data.List (foldl', intercalate)
-import           Data.Maybe (fromMaybe)
+import           Data.List (foldl')
 import           Data.String (fromString)
 import           Data.Word (Word32)
 import qualified Network.NFS.V4 as NFS
