@@ -4,24 +4,16 @@ module Network.WebDAV.NFS.GET
   ( httpGET
   ) where
 
-import           Control.Exception (handle)
 import           Control.Monad (when, unless, guard)
-import           Data.Bits ((.|.))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Lazy as BSL
 import           Data.Maybe (mapMaybe)
 import           Data.Monoid ((<>))
-import qualified Data.Text as T
-import           Data.Time.Clock (UTCTime)
-import           Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime)
-import           Data.Word (Word32, Word64)
+import           Data.Word (Word64)
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.HTTP.Types.Header as HTTP
 import qualified Network.NFS.V4 as NFS
 import qualified Network.Wai as Wai
-import           Waimwork.Result (result, unsafeResult, resultApplication)
 import           Waimwork.HTTP (splitHTTP, unquoteHTTP, quoteHTTP, parseHTTPDate, formatHTTPDate)
 
 import           Network.WebDAV.NFS.Types
@@ -78,7 +70,7 @@ httpGET nfs req pathref = do
       : (HTTP.hContentRange, buildBS $ "bytes " <> BSB.word64Dec a <> BSB.char8 '-' <> BSB.word64Dec b <> BSB.char8 '/' <> sizeb)
       : headers)
       (streamFile nfs ref a $ succ b)
-    Just rl -> errorResponse HTTP.notImplemented501 -- "multipart/byteranges"
+    Just _ -> errorResponse HTTP.notImplemented501 -- "multipart/byteranges"
   where
   ifmat   = splitHTTP     =<< header HTTP.hIfMatch
   ifnomat = splitHTTP     =<< header HTTP.hIfNoneMatch
@@ -95,5 +87,3 @@ httpGET nfs req pathref = do
   checkr (a, b)
     | a <= b = Just (fromInteger a, fromInteger b)
     | otherwise = Nothing
-
-

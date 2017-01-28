@@ -34,3 +34,15 @@ library
     wai,
     waimwork,
     nfs
+
+executable webdavnfs
+  hs-source-dirs: server
+  main-is: webdavnfs.hs
+  default-language: Haskell2010
+  ghc-options: -Wall
+  build-depends:
+    base >=4.8 && <5,
+    filepath,
+    nfs,
+    warp,
+    webdav-nfs

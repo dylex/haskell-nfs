@@ -45,7 +45,6 @@ library
     case-insensitive,
     cereal,
     containers,
-    filepath,
     network,
     template-haskell >= 2.10,
     text,
