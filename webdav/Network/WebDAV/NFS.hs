@@ -17,7 +17,7 @@ import           Data.Monoid ((<>))
 import qualified Data.Text as T
 import           Data.Time.Clock (UTCTime)
 import           Data.Time.Clock.POSIX (POSIXTime, posixSecondsToUTCTime)
-import           Data.Word (Word64)
+import           Data.Word (Word32, Word64)
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.HTTP.Types.Header as HTTP
 import qualified Network.NFS.V4 as NFS
@@ -30,7 +30,11 @@ data NFSRoot = NFSRoot
   { nfsClient :: NFS.Client
   , nfsRoot :: NFS.FileReference
   , nfsDotFiles :: Bool
+  , nfsBlockSize :: Word32
   }
+
+buildBS :: BSB.Builder -> BS.ByteString
+buildBS = BSL.toStrict . BSB.toLazyByteString
 
 emptyResponse :: HTTP.Status -> HTTP.ResponseHeaders -> Wai.Response
 emptyResponse s h = Wai.responseLBS s h mempty
@@ -84,11 +88,25 @@ getFileInfo = fi . NFS.decodeAttrs . NFS.gETATTR4resok'obj_attributes . NFS.gETA
     NFS.fATTR4_TYPE .|. NFS.fATTR4_CHANGE .|. NFS.fATTR4_SIZE .|. NFS.fATTR4_TIME_MODIFY)
   where
   fi (Right [NFS.AttrValType ftyp, NFS.AttrValChange tag, NFS.AttrValSize size, NFS.AttrValTimeModify mtime]) =
-    FileInfo ftyp (BSL.toStrict $ BSB.toLazyByteString $ BSB.word64Hex tag) size (posixSecondsToUTCTime $ NFS.decodeTime mtime)
+    FileInfo ftyp (buildBS $ BSB.word64Hex tag) size (posixSecondsToUTCTime $ NFS.decodeTime mtime)
   fi e = error $ "GETATTR: " ++ show e -- 500 error
 
-get :: NFSRoot -> Wai.Request -> NFS.FileReference -> IO Wai.Response
-get nfs req pathref = do
+streamFile :: NFSRoot -> NFS.FileReference -> Word64 -> Word64 -> Wai.StreamingBody
+streamFile nfs ref start end send done = do
+  NFS.READ4res'NFS4_OK (NFS.READ4resok eof lbuf) <- NFS.nfsCall (nfsClient nfs)
+    $ NFS.op (NFS.READ4args NFS.anonymousStateid start $ fromIntegral l)
+  let buf = NFS.unLengthArray lbuf
+  send $ BSB.byteString buf
+  let next = start + fromIntegral (BS.length buf)
+  if next >= end || eof
+    then done
+    else streamFile nfs ref next end send done
+  where
+  r = end - start
+  l = r `min` fromIntegral (nfsBlockSize nfs)
+
+doGet :: NFSRoot -> Wai.Request -> NFS.FileReference -> IO Wai.Response
+doGet nfs req pathref = do
   ((ref, access), FileInfo{..}) <-
     handleNFSException $ NFS.nfsCall (nfsClient nfs)
       $ NFS.opFileReferenceGet pathref
@@ -108,17 +126,23 @@ get nfs req pathref = do
       isnomod = all (fileMTime <=) ifnomod
       isrange = all (either (fileETag ==) (fileMTime <=)) ifrange
       ranges' = guard isrange >> mapMaybe (checkr . clampr (toInteger fileSize)) <$> ranges
+      sizeb = BSB.word64Dec fileSize
   unless (isnomat || ismod) $
     emptyResult HTTP.notModified304 headers
   unless (ismat || isnomod) $
     emptyResult HTTP.preconditionFailed412 headers
-  case ranges' of
-    Nothing -> return () -- 200
-    Just [] -> emptyResult HTTP.requestedRangeNotSatisfiable416
-      $ (HTTP.hContentRange, "bytes */" <> BSC.pack (show fileSize)) : headers
-    Just [r] -> return () -- HTTP.partialContent206
-    Just rl -> return () -- "multipart/byteranges"
-  fail "TODO"
+  return $ case ranges' of
+    Nothing -> Wai.responseStream HTTP.ok200
+      ((HTTP.hContentLength, buildBS sizeb) : headers)
+      (streamFile nfs ref 0 fileSize)
+    Just [] -> emptyResponse HTTP.requestedRangeNotSatisfiable416
+      $ (HTTP.hContentRange, buildBS $ "bytes */" <> sizeb) : headers
+    Just [(a,b)] -> Wai.responseStream HTTP.partialContent206
+      ( (HTTP.hContentLength, buildBS $ BSB.word64Dec (succ b - a))
+      : (HTTP.hContentRange, buildBS $ "bytes " <> BSB.word64Dec a <> BSB.char8 '-' <> BSB.word64Dec b <> BSB.char8 '/' <> sizeb)
+      : headers)
+      (streamFile nfs ref a $ succ b)
+    Just rl -> errorResponse HTTP.notImplemented501 -- "multipart/byteranges"
   where
   ifmat   = splitHTTP     =<< header HTTP.hIfMatch
   ifnomat = splitHTTP     =<< header HTTP.hIfNoneMatch
@@ -141,4 +165,4 @@ webDAVNFS nfs = resultApplication $ \req -> do
   pathref <- maybe (errorResult HTTP.notFound404) (return . NFS.relativeFileReference (nfsRoot nfs))
     $ parsePath nfs $ Wai.pathInfo req
   case Wai.requestMethod req of
-    "GET" -> get nfs req pathref
+    "GET" -> doGet nfs req pathref

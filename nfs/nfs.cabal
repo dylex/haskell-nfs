@@ -30,6 +30,7 @@ library
     Network.NFS.V4.Exception
     Network.NFS.V4.File
     Network.NFS.V4.Ops
+    Network.NFS.V4.State
     Network.NFS.V4.String
     Network.NFS.V4
   other-modules:
