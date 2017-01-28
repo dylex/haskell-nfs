@@ -22,7 +22,7 @@ import           Network.WebDAV.NFS.File
 streamFile :: NFSRoot -> NFS.FileReference -> Word64 -> Word64 -> Wai.StreamingBody
 streamFile nfs ref start end send done = do
   NFS.READ4res'NFS4_OK (NFS.READ4resok eof lbuf) <- NFS.nfsCall (nfsClient nfs)
-    $ NFS.op (NFS.READ4args NFS.anonymousStateid start $ fromIntegral l)
+    $ NFS.opFileReference ref *> NFS.op (NFS.READ4args NFS.anonymousStateid start $ fromIntegral l)
   let buf = NFS.unLengthArray lbuf
   send $ BSB.byteString buf
   let next = start + fromIntegral (BS.length buf)
