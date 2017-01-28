@@ -38,7 +38,7 @@ encodeBitmap = lengthArray' . V.unfoldr eb where
     x = fromIntegral n
 
 decodeBitmap :: NFS.Bitmap4 -> Bitmap
-decodeBitmap = V.foldl (\n x -> (n `shiftL` finiteBitSize x) .|. fromIntegral x) zeroBits . unLengthArray
+decodeBitmap = V.foldr (\x n -> (n `shiftL` finiteBitSize x) .|. fromIntegral x) zeroBits . unLengthArray
 
 packBitmap :: RPC.XDREnum a => [a] -> Bitmap
 packBitmap [] = zeroBits
