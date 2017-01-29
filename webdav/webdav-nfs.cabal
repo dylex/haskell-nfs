@@ -20,6 +20,8 @@ library
   exposed-modules:
     Network.WebDAV.NFS
   other-modules:
+    Network.WebDAV.XML
+    Network.WebDAV.DAV
     Network.WebDAV.NFS.Types
     Network.WebDAV.NFS.File
     Network.WebDAV.NFS.GET
@@ -29,6 +31,11 @@ library
     base >=4.8 && <5,
     bytestring,
     http-types,
+    hxt,
+    hxt-charproperties,
+    invertible,
+    mtl,
+    network-uri,
     text,
     time,
     wai,

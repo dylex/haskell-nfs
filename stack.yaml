@@ -1,4 +1,4 @@
-resolver: nightly-2017-01-26
+resolver: nightly-2017-01-28
 extra-deps:
 - invertible-0.1.2
 - web-inv-route-0.1.1
@@ -16,6 +16,8 @@ flags:
     TypeCompose: false
     arrows: false
     hlist: false
+    invariant: false
+    lens: false
     partial-isomorphisms: false
     piso: false
   web-inv-route:
@@ -23,3 +25,7 @@ flags:
     happstack: false
 explicit-setup-deps:
   nfs: true
+ghc-options:
+  ONC-RPC: -Wall -Werror
+  nfs: -Wall -Werror
+  webdav-nfs: -Wall -Werror
