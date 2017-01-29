@@ -1,7 +1,11 @@
 -- |DAV element type declarations, based on RFC4918
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE ViewPatterns #-}
 module Network.WebDAV.DAV
-  ( ActiveLock(..)
+  ( -- * §14 Elements
+    ActiveLock(..)
   , Depth(..)
   , Error(..)
   , Include(..)
@@ -23,14 +27,28 @@ module Network.WebDAV.DAV
   , ResponseDescription
   , Status
   , Timeout(..)
+    -- * §15 Properties
+  , Property(..)
+  , propertyContent
   ) where
 
 import           Control.Arrow (first)
+import           Control.Monad (msum)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
-import           Data.Word (Word32)
+import           Data.Char (isDigit, isSpace)
+import           Data.Functor.Classes (Show1, Eq1)
+import           Data.Functor.Identity (Identity(..))
+import qualified Data.Invertible as Inv
+import           Data.Monoid (Alt(..))
+import           Data.Proxy (Proxy(..))
+import           Data.Time.Clock (UTCTime)
+import           Data.Time.Format (formatTime, parseTimeM, defaultTimeLocale)
+import           Data.Word (Word32, Word64)
 import           Network.URI (URI)
 import qualified Network.HTTP.Types.Status as HTTP
 import qualified Text.XML.HXT.DOM.TypeDefs as XT
+import           Waimwork.HTTP (formatHTTPDate, parseHTTPDate, ETag, renderETag, parseETag)
 
 import qualified Network.WebDAV.XML as X
 
@@ -59,10 +77,6 @@ instance X.XmlPickler ActiveLock where
       X.>*< X.xpOption X.xpickle
       X.>*< X.xpOption X.xpickle
       X.>*< X.xpickle)
-
--- |§14.3
-data Collection = Collection
-  deriving (Eq, Show)
 
 -- |§14.4
 data Depth
@@ -159,7 +173,7 @@ data LockScope
 
 instance X.XmlPickler LockScope where
   xpickle = xpElem "lockscope" $ [X.biCase|
-      Left () <-> LockScopeExclusive
+      Left  () <-> LockScopeExclusive
       Right () <-> LockScopeShared |]
     X.>$<  (xpElem "exclusive" X.xpUnit
       X.>|< xpElem "shared" X.xpUnit)
@@ -198,15 +212,22 @@ instance X.XmlPickler Owner where
     X.>$< X.xpAny
 
 -- |§14.18
-newtype Prop = Prop XT.XmlTrees -- elements only
-  deriving (Eq, Show)
+newtype Prop c = Prop [Property c]
 
-instance X.XmlPickler Prop where
+deriving instance {- PropertyContent c => -} Eq   (Prop Proxy)
+deriving instance {- PropertyContent c => -} Eq   (Prop Maybe)
+deriving instance {- PropertyContent c => -} Eq   (Prop Identity)
+deriving instance {- PropertyContent c => -} Show (Prop Proxy)
+deriving instance {- PropertyContent c => -} Show (Prop Maybe)
+deriving instance {- PropertyContent c => -} Show (Prop Identity)
+
+instance PropertyContent c => X.XmlPickler (Prop c) where
   xpickle = xpElem "prop" $ [X.biCase|x <-> Prop x|]
-    X.>$< X.xpTrimAnyElems
+    X.>$< X.xpList X.xpickle
 
 -- |§14.19
 newtype PropertyUpdate = PropertyUpdate [PropUpdate]
+  deriving (Eq, Show)
 
 instance X.XmlPickler PropertyUpdate where
   xpickle = xpElem "propertyupdate" $ [X.biCase|
@@ -214,13 +235,13 @@ instance X.XmlPickler PropertyUpdate where
     X.>$<  X.xpList1 X.xpickle
 
 data PropUpdate
-  = Remove{ propUpdate :: Prop }
-  | Set{ propUpdate :: Prop }
+  = Remove (Prop WithoutValue)
+  | Set (Prop WithValue)
   deriving (Eq, Show)
 
 instance X.XmlPickler PropUpdate where
   xpickle = [X.biCase|
-      Left p <-> Remove p
+      Left  p <-> Remove p
       Right p <-> Set p|]
     X.>$<  (xpElem "remove" X.xpickle
       X.>|< xpElem "set" X.xpickle)
@@ -229,21 +250,21 @@ instance X.XmlPickler PropUpdate where
 data PropFind
   = PropName
   | PropAll{ propFindInclude :: Maybe Include }
-  | PropFind Prop
+  | PropFind (Prop WithoutValue)
   deriving (Eq, Show)
 
 instance X.XmlPickler PropFind where
   xpickle = [X.biCase|
-      Left (Left ()) <-> PropName
-      Left (Right i) <-> PropAll i
-      Right p <-> PropFind p|]
+      Left (Left  ()) <-> PropName
+      Left (Right i)  <-> PropAll i
+            Right p   <-> PropFind p|]
     X.>$<  (xpElem "propname" X.xpUnit
       X.>|< xpElem "allprop" X.xpUnit X.*< X.xpOption X.xpickle
       X.>|< X.xpickle)
 
 -- |§14.22
 data PropStat = PropStat
-  { propStatProp :: Prop
+  { propStatProp :: Prop MaybeValue
   , propStatus :: Status
   , propStatError :: Maybe Error
   , propStatResonseDescription :: Maybe ResponseDescription
@@ -269,6 +290,16 @@ data Response = Response
   }
   deriving (Eq, Show)
 
+instance X.XmlPickler Response where
+  xpickle = xpElem "response" $ [X.biCase|
+      (((((h, s), p), e), d), l) <-> Response h s p e d l|]
+    X.>$<  (X.xpList1 xpHRef
+      X.>*< X.xpOption xpStatus
+      X.>*< X.xpList X.xpickle
+      X.>*< X.xpOption X.xpickle
+      X.>*< X.xpOption xpResponseDescription
+      X.>*< X.xpOption X.xpickle)
+
 -- |§14.25
 type ResponseDescription = String
 
@@ -280,9 +311,13 @@ type Status = HTTP.Status
 
 xpStatus :: X.PU Status
 xpStatus = xpElem "status" $ X.xpWrapEither (rd, sh) X.xpText where
-  rd ('H':'T':'T':'P':'/':_) = Right $ HTTP.Status undefined undefined -- TODO
+  rd ('H':'T':'T':'P':'/':(dropWhile isDigit -> '.':(dropWhile isDigit -> ' ':x:y:z:' ':r)))
+    | all isDigit s = Right $ HTTP.Status (read s) (BSC.pack r) where s = [x,y,z]
   rd _ = Left "invalid HTTP status line"
-  sh (HTTP.Status n m) = "HTTP/1.1 " ++ show n ++ " " ++ BSC.unpack m
+  sh (HTTP.Status n m) = "HTTP/1.1 " ++ pad (show n) ++ " " ++ BSC.unpack m where
+    pad [x] = ['0','0',x]
+    pad [x,y] = ['0',x,y]
+    pad z = z
 
 -- |§14.29
 newtype Timeout = Timeout{ timeoutSeconds :: Maybe Word32 }
@@ -299,3 +334,89 @@ instance Read Timeout where
 
 instance X.XmlPickler Timeout where
   xpickle = xpElem "timeout" X.xpPrim
+
+
+class (Traversable c, Monad c, Show1 c, Eq1 c) => PropertyContent c where
+  xpPropertyContent :: X.PU a -> X.PU (c a)
+
+type WithoutValue = Proxy
+type WithValue = Identity
+type MaybeValue = Maybe
+
+instance PropertyContent Proxy where
+  xpPropertyContent _ = X.pureI Proxy
+instance PropertyContent Maybe where
+  xpPropertyContent = X.xpOption
+instance PropertyContent Identity where
+  xpPropertyContent = Inv.fmap Inv.identity
+
+propertyContent :: PropertyContent c => c a -> Maybe a
+propertyContent = getAlt . foldMap (Alt . Just)
+
+-- |Properties, with values guarded by type argument
+data Property c
+  = CreationDate (c DateTime) -- ^iso8601
+  | DisplayName (c String)
+  | GetContentLanguage (c BS.ByteString) -- ^language-tag
+  | GetContentLength (c Word64)
+  | GetContentType (c BS.ByteString) -- ^media-type
+  | GetETag (c ETag)
+  | GetLastModified (c UTCTime) -- ^http date
+  | LockDiscovery (c [ActiveLock])
+  | ResourceType (c (Bool, XT.XmlTrees)) -- ^(collection, elements)
+  | SupportedLock (c [LockEntry])
+  | Property
+    { propertyName :: XT.QName
+    , propertyValue :: c XT.XmlTrees
+    }
+
+deriving instance {- PropertyContent c => -} Eq   (Property Proxy)
+deriving instance {- PropertyContent c => -} Eq   (Property Maybe)
+deriving instance {- PropertyContent c => -} Eq   (Property Identity)
+deriving instance {- PropertyContent c => -} Show (Property Proxy)
+deriving instance {- PropertyContent c => -} Show (Property Maybe)
+deriving instance {- PropertyContent c => -} Show (Property Identity)
+
+instance PropertyContent c => X.XmlPickler (Property c) where
+  xpickle = [X.biCase|
+      Left (Left (Left (Left (Left (Left (Left (Left (Left (Left  c))))))))) <-> CreationDate c
+      Left (Left (Left (Left (Left (Left (Left (Left (Left (Right c))))))))) <-> DisplayName c
+            Left (Left (Left (Left (Left (Left (Left (Left (Right c))))))))  <-> GetContentLanguage c
+                  Left (Left (Left (Left (Left (Left (Left (Right c)))))))   <-> GetContentLength c
+                        Left (Left (Left (Left (Left (Left (Right c))))))    <-> GetContentType c
+                              Left (Left (Left (Left (Left (Right c)))))     <-> GetETag c
+                                    Left (Left (Left (Left (Right c))))      <-> GetLastModified c
+                                          Left (Left (Left (Right c)))       <-> LockDiscovery c
+                                                Left (Left (Right c))        <-> ResourceType c
+                                                      Left (Right c)         <-> SupportedLock c
+                                                            Right (p, c)     <-> Property p c|]
+    X.>$<  (xpElem "creationdate"       (xpPropertyContent xpDateTime)
+      X.>|< xpElem "displayname"        (xpPropertyContent X.xpText0)
+      X.>|< xpElem "getcontentlanguage" (xpPropertyContent xpHTTPHeader)
+      X.>|< xpElem "getcontentlength"   (xpPropertyContent X.xpPrim)
+      X.>|< xpElem "getcontenttype"     (xpPropertyContent xpHTTPHeader)
+      X.>|< xpElem "getetag"            (xpPropertyContent xpETag)
+      X.>|< xpElem "getlastmodified"    (xpPropertyContent xpHTTPDate)
+      X.>|< xpElem "lockdiscovery"      (xpPropertyContent $ X.xpList X.xpickle)
+      X.>|< xpElem "resourcetype"       (xpPropertyContent $
+        Inv.isJust X.>$< X.xpOption (xpElem "collection" X.xpUnit)
+          X.>*< X.xpTrimAnyElems)
+      X.>|< xpElem "supportedlock"      (xpPropertyContent $ X.xpList X.xpickle)
+      X.>|< X.xpTrimNameElem            (xpPropertyContent X.xpAny))
+
+type DateTime = UTCTime
+
+xpDateTime :: X.PU DateTime
+xpDateTime = X.xpWrapEither (rd, sh) X.xpText where
+  rd s = maybe (Left "invalid iso8601 date") Right $ msum $ map (\f -> parseTimeM True defaultTimeLocale f s) fmt
+  sh = formatTime defaultTimeLocale $ head fmt
+  fmt = ["%FT%T%QZ", "%FT%T%Q%z"]
+
+xpHTTPHeader :: X.PU BS.ByteString
+xpHTTPHeader = X.xpWrap (BSC.pack . dropWhile isSpace, BSC.unpack) X.xpText
+
+xpHTTPDate :: X.PU UTCTime
+xpHTTPDate = X.xpWrapEither (maybe (Left "invalid HTTP date") Right . parseHTTPDate, formatHTTPDate) xpHTTPHeader
+
+xpETag :: X.PU ETag
+xpETag = X.xpWrap (parseETag, renderETag) xpHTTPHeader

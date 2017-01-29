@@ -8,11 +8,12 @@ module Network.WebDAV.XML
   , xpTrimAnyElem
   , xpTrimAnyElems
   , xpTrimElemNS
+  , xpTrimNameElem
   , xpURI
   ) where
 
 import           Control.Invertible.Monoidal
-import           Control.Monad.State.Class (modify, state)
+import           Control.Monad.State.Class (gets, modify, state)
 import           Data.Char.Properties.XMLCharProps (isXmlSpaceChar)
 import qualified Data.Invertible as Inv
 import qualified Network.URI as URI
@@ -71,6 +72,19 @@ xpTrimAnyElems = xpList xpTrimAnyElem
 
 xpTrimElemNS :: String -> String -> String -> PU a -> PU a
 xpTrimElemNS s p n c = xpWhitespace *< xpElemNS s p n c >* xpWhitespace
+
+xpTrimNameElem :: PU a -> PU (XT.QName, a)
+xpTrimNameElem p = xpWhitespace *< PU
+  { appPickle = \(n, c) ->
+      let s = appPickle p c emptySt in
+      putCont $ XN.NTree (XT.XTag n $ attributes s) (contents s)
+  , appUnPickle = do
+      l <- gets nesting
+      e <- getCont
+      n <- liftMaybe "xpNameElem: XML element expected" $ XN.getElemName e
+      liftUnpickleVal $ (,) n <$> unpickleElem' (xpCheckEmpty p) (succ l) e
+  , theSchema = Any
+  }
 
 xpURI :: PU URI.URI
 xpURI = xpWrapEither 
