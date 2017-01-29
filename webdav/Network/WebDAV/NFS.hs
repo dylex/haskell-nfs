@@ -19,3 +19,7 @@ webDAVNFS nfs = resultApplication $ \req -> do
     $ parsePath nfs $ Wai.pathInfo req
   case Wai.requestMethod req of
     "GET" -> httpGET nfs req pathref
+    "HEAD" -> do
+      r <- httpGET nfs req pathref
+      return $ emptyResponse (Wai.responseStatus r) (Wai.responseHeaders r)
+    _ -> return $ errorResponse HTTP.methodNotAllowed405

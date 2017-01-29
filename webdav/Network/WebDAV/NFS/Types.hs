@@ -22,6 +22,7 @@ import           Waimwork.Result (result)
 data NFSRoot = NFSRoot
   { nfsClient :: NFS.Client
   , nfsRoot :: NFS.FileReference
+  , nfsReadOnly :: Bool
   , nfsDotFiles :: Bool
   , nfsBlockSize :: Word32
   }

@@ -18,6 +18,7 @@ data Opts = Opts
   { optServer :: String
   , optRoot :: FilePath
   , optPort :: Int
+  , optReadOnly :: Bool
   , optDotFiles :: Bool
   , optBlockSize :: Word32
   , optAuthUnix :: Maybe [Word32]
@@ -28,6 +29,7 @@ defOpts = Opts
   { optServer = "localhost"
   , optRoot = "/"
   , optPort = 8049
+  , optReadOnly = False
   , optDotFiles = False
   , optBlockSize = 131072
   , optAuthUnix = Nothing
@@ -38,6 +40,9 @@ opts =
   [ Opt.Option "p" ["port"]
       (Opt.ReqArg (\a o -> o{ optPort = read a }) "PORT")
       ("listen on port [" ++ show (optPort defOpts) ++ "]")
+  , Opt.Option "r" ["read-only"]
+      (Opt.NoArg (\o -> o{ optReadOnly = True }))
+      "only allow non-modifying access"
   , Opt.Option "d" ["dot-files"]
       (Opt.NoArg (\o -> o{ optDotFiles = True }))
       "allow access to dot-files"
@@ -81,6 +86,7 @@ main = do
   Warp.run optPort $ webDAVNFS NFSRoot
     { nfsClient = client
     , nfsRoot = root
+    , nfsReadOnly = optReadOnly
     , nfsDotFiles = optDotFiles
     , nfsBlockSize = optBlockSize
     }
