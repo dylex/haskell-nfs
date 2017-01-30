@@ -10,17 +10,19 @@ module Network.WebDAV.XML
   , xpTrimElemNS
   , xpTrimNameElem
   , xpURI
+  , toXMLDoc
   ) where
 
 import           Control.Invertible.Monoidal
 import           Control.Monad.State.Class (gets, modify, state)
+import qualified Data.ByteString.Lazy as BSL
 import           Data.Char.Properties.XMLCharProps (isXmlSpaceChar)
 import qualified Data.Invertible as Inv
 import qualified Network.URI as URI
 import           Text.XML.HXT.Arrow.Pickle.Schema (Schema(Any), scEmpty, scSeq, scAlt, scDTxsd)
 import           Text.XML.HXT.Arrow.Pickle.Xml
+import qualified Text.XML.HXT.Core as HXT
 import qualified Text.XML.HXT.DOM.XmlNode as XN
-import qualified Text.XML.HXT.DOM.TypeDefs as XT
 import qualified Text.XML.HXT.XMLSchema.DataTypeLibW3CNames as XSD
 
 instance Inv.Functor PU where
@@ -54,30 +56,30 @@ xpWhitespace = PU
   , theSchema = scEmpty
   }
 
-xpAny :: PU XT.XmlTrees
+xpAny :: PU HXT.XmlTrees
 xpAny = PU
   { appPickle = \c s -> s{ contents = c ++ contents s }
   , appUnPickle = state $ \s -> (contents s, s{ contents = [] })
   , theSchema = Any -- XXX
   }
 
-xpTrimAnyElem :: PU XT.XmlTree
+xpTrimAnyElem :: PU HXT.XmlTree
 xpTrimAnyElem = xpWhitespace *< xpWrapEither 
   ( \e -> if XN.isElem e then Right e else Left "xpAnyElem: any element expected"
   , id
   ) xpTree
 
-xpTrimAnyElems :: PU XT.XmlTrees
+xpTrimAnyElems :: PU HXT.XmlTrees
 xpTrimAnyElems = xpList xpTrimAnyElem
 
 xpTrimElemNS :: String -> String -> String -> PU a -> PU a
 xpTrimElemNS s p n c = xpWhitespace *< xpElemNS s p n c >* xpWhitespace
 
-xpTrimNameElem :: PU a -> PU (XT.QName, a)
+xpTrimNameElem :: PU a -> PU (HXT.QName, a)
 xpTrimNameElem p = xpWhitespace *< PU
   { appPickle = \(n, c) ->
       let s = appPickle p c emptySt in
-      putCont $ XN.NTree (XT.XTag n $ attributes s) (contents s)
+      putCont $ XN.NTree (HXT.XTag n $ attributes s) (contents s)
   , appUnPickle = do
       l <- gets nesting
       e <- getCont
@@ -91,3 +93,10 @@ xpURI = xpWrapEither
   ( maybe (Left "invalid anyURI") Right . URI.parseURIReference
   , \u -> URI.uriToString id u "")
   $ xpText0DT $ scDTxsd XSD.xsd_anyURI []
+
+toXMLDoc :: XmlPickler a => a -> BSL.ByteString
+toXMLDoc = BSL.concat
+  . HXT.runLA (HXT.xshowBlob HXT.getChildren
+    HXT.<<< HXT.addXmlPiEncoding HXT.<<< HXT.addXmlPi
+    HXT.<<< HXT.processChildren (HXT.cleanupNamespaces HXT.collectPrefixUriPairs))
+  . pickleDoc xpickle
