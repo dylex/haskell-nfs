@@ -1,55 +1,34 @@
-{-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Network.WebDAV.XML
-  ( module Text.XML.HXT.Arrow.Pickle.Xml.Invertible
-  , xpTrimAnyElem
-  , xpTrimAnyElems
-  , xpTrimElemNS
-  , xpTrimNameElem
-  , xpURI
-  , toXMLDoc
+  ( XMLTrees
+  , XMLName
+  , XMLConverter
+  , XML(..)
   ) where
 
-import           Control.Invertible.Monoidal
-import           Control.Monad.State.Class (gets)
-import qualified Data.ByteString.Lazy as BSL
+import qualified Data.Text as T
+import qualified Data.XML.Types as XT
 import qualified Network.URI as URI
-import           Text.XML.HXT.Arrow.Pickle.Schema (Schema(Any), scDTxsd)
-import           Text.XML.HXT.Arrow.Pickle.Xml.Invertible
-import qualified Text.XML.HXT.Core as HXT
-import qualified Text.XML.HXT.DOM.XmlNode as XN
-import qualified Text.XML.HXT.XMLSchema.DataTypeLibW3CNames as XSD
+import qualified Text.XML.Stream.Invertible as X
 
-xpTrimAnyElem :: PU HXT.XmlTree
-xpTrimAnyElem = xpTrim xpAnyElem
+type XMLTrees = [XT.Node]
+type XMLName = XT.Name
+type XMLConverter a = X.Streamer Maybe a
 
-xpTrimAnyElems :: PU HXT.XmlTrees
-xpTrimAnyElems = xpList xpTrimAnyElem
+class XML a where
+  xmlConvert :: XMLConverter a
 
-xpTrimElemNS :: String -> String -> String -> PU a -> PU a
-xpTrimElemNS s p n c = xpWhitespace *< xpElemNS s p n c >* xpWhitespace
+instance XML [XT.Node] where
+  xmlConvert = X.passNodes
 
-xpTrimNameElem :: PU a -> PU (HXT.QName, a)
-xpTrimNameElem p = xpWhitespace *< PU
-  { appPickle = \(n, c) ->
-      let s = appPickle p c emptySt in
-      putCont $ XN.NTree (HXT.XTag n $ attributes s) (contents s)
-  , appUnPickle = do
-      l <- gets nesting
-      e <- getCont
-      n <- liftMaybe "xpNameElem: XML element expected" $ XN.getElemName e
-      liftUnpickleVal $ (,) n <$> unpickleElem' (xpCheckEmpty p) (succ l) e
-  , theSchema = Any
-  }
+instance XML T.Text where
+  xmlConvert = X.content
 
-xpURI :: PU URI.URI
-xpURI = xpWrapEither 
-  ( maybe (Left "invalid anyURI") Right . URI.parseURIReference
-  , \u -> URI.uriToString id u "")
-  $ xpText0DT $ scDTxsd XSD.xsd_anyURI []
+instance XML String where
+  xmlConvert = X.stringContent
 
-toXMLDoc :: XmlPickler a => a -> BSL.ByteString
-toXMLDoc = BSL.concat
-  . HXT.runLA (HXT.xshowBlob HXT.getChildren
-    {- HXT.<<< HXT.addXmlPiEncoding -} HXT.<<< HXT.addXmlPi
-    HXT.<<< HXT.processChildren (HXT.cleanupNamespaces HXT.collectPrefixUriPairs))
-  . pickleDoc xpickle
+instance XML URI.URI where
+  xmlConvert = X.convert
+    (maybe (Left "invalid anyURI") Right . URI.parseURIReference)
+    (\u -> URI.uriToString id u "")
+    X.stringContent

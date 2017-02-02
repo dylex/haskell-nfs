@@ -31,16 +31,15 @@ library
     base >=4.8 && <5,
     bytestring,
     http-types,
-    hxt,
-    hxt-charproperties,
     invertible,
-    invertible-hxt,
+    invertible-conduit,
     mtl,
     network-uri,
     text,
     time,
     wai,
     waimwork,
+    xml-types,
     nfs
 
 executable webdavnfs
