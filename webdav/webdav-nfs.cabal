@@ -34,6 +34,7 @@ library
     hxt,
     hxt-charproperties,
     invertible,
+    invertible-hxt,
     mtl,
     network-uri,
     text,

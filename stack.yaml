@@ -1,12 +1,19 @@
-resolver: nightly-2017-01-28
+resolver: nightly-2017-02-01
 extra-deps:
-- invertible-0.1.2
 - web-inv-route-0.1.1
 - postgresql-typed-0.5.0
 packages:
 - location: rpc
 - location: nfs
 - location: webdav
+- location:
+    git: git://github.com/dylex/invertible
+    commit: 0.2.0
+  subdirs:
+  - .
+  - hxt
+  - conduit
+  extra-dep: true
 - location:
     git: git://github.com/dylex/waimwork
     commit: master

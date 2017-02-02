@@ -105,7 +105,7 @@ newtype Error = Error XT.XmlTrees
 
 instance X.XmlPickler Error where
   xpickle = xpElem "error" $ [X.biCase|x <-> Error x|]
-    X.>$< X.xpAny
+    X.>$< X.xpAnyCont
 
 -- |§14.7
 type HRef = URI
@@ -209,7 +209,7 @@ newtype Owner = Owner XT.XmlTrees
 
 instance X.XmlPickler Owner where
   xpickle = xpElem "owner" $ [X.biCase|x <-> Owner x|]
-    X.>$< X.xpAny
+    X.>$< X.xpAnyCont
 
 -- |§14.18
 newtype Prop c = Prop [Property c]
@@ -402,7 +402,7 @@ instance PropertyContent c => X.XmlPickler (Property c) where
         Inv.isJust X.>$< X.xpOption (xpElem "collection" X.xpUnit)
           X.>*< X.xpTrimAnyElems)
       X.>|< xpElem "supportedlock"      (xpPropertyContent $ X.xpList X.xpickle)
-      X.>|< X.xpTrimNameElem            (xpPropertyContent X.xpAny))
+      X.>|< X.xpTrimNameElem            (xpPropertyContent X.xpAnyCont))
 
 type DateTime = UTCTime
 
