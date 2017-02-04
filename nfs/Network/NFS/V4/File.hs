@@ -6,6 +6,7 @@ module Network.NFS.V4.File
   , relativeFileReference
   , absoluteFileReference
   , opFileReference
+  , opGetFileHandle
   , opFileReferenceGet
   ) where
 

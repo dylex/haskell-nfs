@@ -8,7 +8,6 @@ module Network.WebDAV.DAV
     ActiveLock(..)
   , Depth(..)
   , Error(..)
-  , Include(..)
   , Location(..)
   , LockEntry(..)
   , LockInfo(..)
@@ -18,7 +17,6 @@ module Network.WebDAV.DAV
   , LockType(..)
   , MultiStatus(..)
   , Owner(..)
-  , Prop(..)
   , PropertyUpdate(..)
   , PropUpdate(..)
   , PropFind(..)
@@ -28,7 +26,11 @@ module Network.WebDAV.DAV
   , Status
   , Timeout(..)
     -- * §15 Properties
+  , PropertyContent
   , Property(..)
+  , PropertyType
+  , propertyType
+  , PropertyValue
   , propertyContent
   ) where
 
@@ -118,14 +120,6 @@ type HRef = URI
 
 xmlHRef :: XMLConverter HRef
 xmlHRef = davElem "href" xmlConvert
-
--- |§14.8
-newtype Include = Include XMLTrees
-  deriving (Eq, Show)
-
-instance XML Include where
-  xmlConvert = davElem "include" $ [X.biCase|x <-> Include x|]
-    X.>$< xmlConvert
 
 -- |§14.9
 newtype Location = Location{ locationHRef :: HRef }
@@ -218,18 +212,10 @@ instance XML Owner where
     X.>$< xmlConvert
 
 -- |§14.18
-newtype Prop c = Prop [Property c]
+type Prop c = [Property c]
 
-deriving instance {- PropertyContent c => -} Eq   (Prop Proxy)
-deriving instance {- PropertyContent c => -} Eq   (Prop Maybe)
-deriving instance {- PropertyContent c => -} Eq   (Prop Identity)
-deriving instance {- PropertyContent c => -} Show (Prop Proxy)
-deriving instance {- PropertyContent c => -} Show (Prop Maybe)
-deriving instance {- PropertyContent c => -} Show (Prop Identity)
-
-instance PropertyContent c => XML (Prop c) where
-  xmlConvert = davElem "prop" $ [X.biCase|x <-> Prop x|]
-    X.>$< X.manyI xmlConvert
+xmlProp :: PropertyContent c => XMLConverter [Property c]
+xmlProp = davElem "prop" xmlConvert
 
 -- |§14.19
 newtype PropertyUpdate = PropertyUpdate [PropUpdate]
@@ -249,24 +235,28 @@ instance XML PropUpdate where
   xmlConvert = [X.biCase|
       Left  p <-> Remove p
       Right p <-> Set p|]
-    X.>$<  (davElem "remove" xmlConvert
-      X.>|< davElem "set" xmlConvert)
+    X.>$<  (davElem "remove" xmlProp
+      X.>|< davElem "set" xmlProp)
 
 -- |§14.20
 data PropFind
   = PropName
-  | PropAll{ propFindInclude :: Maybe Include }
-  | PropFind (Prop WithoutValue)
+  | PropFind
+    { propFindAll :: !Bool
+    , propFind :: Prop WithoutValue
+    }
   deriving (Eq, Show)
 
 instance XML PropFind where
   xmlConvert = [X.biCase|
-      Left (Left  ()) <-> PropName
-      Left (Right i)  <-> PropAll i
-            Right p   <-> PropFind p|]
+      Left (Left  ())       <-> PropName
+      Left (Right Nothing)  <-> PropFind True []
+      Left (Right (Just l)) <-> PropFind True l
+            Right p         <-> PropFind False p|]
     X.>$<  (davElem "propname" X.unit
-      X.>|< davElem "allprop" X.unit X.*< X.optionalI xmlConvert
-      X.>|< xmlConvert)
+      X.>|< davElem "allprop" X.unit X.*< X.optionalI
+        (davElem "include" xmlConvert)
+      X.>|< xmlProp)
 
 -- |§14.22
 data PropStat = PropStat
@@ -280,7 +270,7 @@ data PropStat = PropStat
 instance XML PropStat where
   xmlConvert = davElem "propstat" $ [X.biCase|
       (((p, s), e), r) <-> PropStat p s e r|]
-    X.>$<  (xmlConvert
+    X.>$<  (xmlProp
       X.>*< xmlStatus
       X.>*< X.optionalI xmlConvert
       X.>*< X.optionalI xmlResponseDescription)
@@ -361,24 +351,25 @@ propertyContent = getAlt . foldMap (Alt . Just)
 
 -- |Properties, with values guarded by type argument
 data Property c
-  = CreationDate (c DateTime) -- ^iso8601
-  | DisplayName (c T.Text)
-  | GetContentLanguage (c BS.ByteString) -- ^language-tag
-  | GetContentLength (c Word64)
-  | GetContentType (c BS.ByteString) -- ^media-type
-  | GetETag (c ETag)
-  | GetLastModified (c UTCTime) -- ^http date
-  | LockDiscovery (c [ActiveLock])
-  | ResourceType (c (Bool, XMLTrees)) -- ^(collection, elements)
-  | SupportedLock (c [LockEntry])
+  = CreationDate !(c DateTime) -- ^iso8601
+  | DisplayName !(c T.Text)
+  | GetContentLanguage !(c BS.ByteString) -- ^language-tag
+  | GetContentLength !(c Word64)
+  | GetContentType !(c BS.ByteString) -- ^media-type
+  | GetETag !(c ETag)
+  | GetLastModified !(c UTCTime) -- ^http date
+  | LockDiscovery !(c [ActiveLock])
+  | ResourceType !(c (Bool, XMLTrees)) -- ^(collection, elements)
+  | SupportedLock !(c [LockEntry])
   | Property
-    { propertyName :: XMLName
-    , propertyValue :: c XMLTrees
+    { propertyName :: !XMLName
+    , propertyValue :: !(c XMLTrees)
     }
 
 deriving instance {- PropertyContent c => -} Eq   (Property Proxy)
 deriving instance {- PropertyContent c => -} Eq   (Property Maybe)
 deriving instance {- PropertyContent c => -} Eq   (Property Identity)
+deriving instance {- PropertyContent c => -} Ord  (Property Proxy)
 deriving instance {- PropertyContent c => -} Show (Property Proxy)
 deriving instance {- PropertyContent c => -} Show (Property Maybe)
 deriving instance {- PropertyContent c => -} Show (Property Identity)
@@ -410,6 +401,12 @@ instance PropertyContent c => XML (Property c) where
       X.>|< davElem "supportedlock"      (xmlPropertyContent $ X.manyI xmlConvert)
       X.>|< X.tag X.unit                 (xmlPropertyContent X.passNodes))
 
+type PropertyType = Property WithoutValue
+type PropertyValue = Property WithValue
+
+propertyType :: (WithoutValue a -> PropertyType) -> PropertyType
+propertyType c = c Proxy
+
 type DateTime = UTCTime
 
 xmlDateTime :: XMLConverter DateTime
@@ -425,4 +422,4 @@ xmlHTTPDate :: XMLConverter UTCTime
 xmlHTTPDate = X.convert (maybe (Left "invalid HTTP date") Right . parseHTTPDate) formatHTTPDate xmlHTTPHeader
 
 xmlETag :: XMLConverter ETag
-xmlETag = (parseETag X.:<->: renderETag) X.>$< xmlHTTPHeader
+xmlETag = X.convert parseETag renderETag xmlHTTPHeader

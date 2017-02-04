@@ -1,5 +1,5 @@
 module Network.NFS.V4.Client
-  ( Client
+  ( Client(..)
   , openClient
   , closeClient
   , setClientAuth

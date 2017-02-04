@@ -18,8 +18,8 @@ type XMLConverter a = X.Streamer Maybe a
 class XML a where
   xmlConvert :: XMLConverter a
 
-instance XML [XT.Node] where
-  xmlConvert = X.passNodes
+instance XML XT.Node where
+  xmlConvert = X.passNode
 
 instance XML T.Text where
   xmlConvert = X.content
@@ -32,3 +32,6 @@ instance XML URI.URI where
     (maybe (Left "invalid anyURI") Right . URI.parseURIReference)
     (\u -> URI.uriToString id u "")
     X.stringContent
+
+instance XML a => XML [a] where
+  xmlConvert = X.manyI xmlConvert

@@ -24,12 +24,14 @@ library
     Network.WebDAV.DAV
     Network.WebDAV.NFS.Types
     Network.WebDAV.NFS.File
+    Network.WebDAV.NFS.Property
     Network.WebDAV.NFS.GET
   default-language: Haskell2010
   ghc-options: -Wall
   build-depends:       
     base >=4.8 && <5,
     bytestring,
+    containers,
     http-types,
     invertible,
     invertible-conduit,
