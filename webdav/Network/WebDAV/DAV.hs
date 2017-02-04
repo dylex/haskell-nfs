@@ -36,6 +36,7 @@ module Network.WebDAV.DAV
 
 import           Control.Arrow (first)
 import           Control.Monad (msum)
+import           Control.Monad.Catch (MonadThrow)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Char (isDigit)
@@ -60,7 +61,7 @@ import           Network.WebDAV.XML
 davName :: String -> XMLName
 davName n = XT.Name (T.pack n) (Just $ T.pack "DAV:") (Just $ T.pack "D")
 
-davElem :: String -> XMLConverter a -> XMLConverter a
+davElem :: MonadThrow m => String -> XMLConverter m a -> XMLConverter m a
 davElem = X.tagNoAttr . davName
 
 -- |§14.1
@@ -118,7 +119,7 @@ instance XML Error where
 -- |§14.7
 type HRef = URI
 
-xmlHRef :: XMLConverter HRef
+xmlHRef :: MonadThrow m => XMLConverter m HRef
 xmlHRef = davElem "href" xmlConvert
 
 -- |§14.9
@@ -214,7 +215,7 @@ instance XML Owner where
 -- |§14.18
 type Prop c = [Property c]
 
-xmlProp :: PropertyContent c => XMLConverter [Property c]
+xmlProp :: (MonadThrow m, PropertyContent c) => XMLConverter m [Property c]
 xmlProp = davElem "prop" xmlConvert
 
 -- |§14.19
@@ -299,13 +300,13 @@ instance XML Response where
 -- |§14.25
 type ResponseDescription = T.Text
 
-xmlResponseDescription :: XMLConverter ResponseDescription
+xmlResponseDescription :: MonadThrow m => XMLConverter m ResponseDescription
 xmlResponseDescription = davElem "responsedescription" X.content
 
 -- |§14.28
 type Status = HTTP.Status
 
-xmlStatus :: XMLConverter Status
+xmlStatus :: MonadThrow m => XMLConverter m Status
 xmlStatus = davElem "status" $ X.convert rd sh X.stringContent where
   rd ('H':'T':'T':'P':'/':(dropWhile isDigit -> '.':(dropWhile isDigit -> ' ':x:y:z:' ':r)))
     | all isDigit s = Right $ HTTP.Status (read s) (BSC.pack r) where s = [x,y,z]
@@ -333,7 +334,7 @@ instance XML Timeout where
 
 
 class (Traversable c, Monad c, Show1 c, Eq1 c) => PropertyContent c where
-  xmlPropertyContent :: XMLConverter a -> XMLConverter (c a)
+  xmlPropertyContent :: XMLConverter m a -> XMLConverter m (c a)
 
 type WithoutValue = Proxy
 type WithValue = Identity
@@ -409,17 +410,17 @@ propertyType c = c Proxy
 
 type DateTime = UTCTime
 
-xmlDateTime :: XMLConverter DateTime
+xmlDateTime :: MonadThrow m => XMLConverter m DateTime
 xmlDateTime = X.convert rd sh X.stringContent where
   rd s = maybe (Left "invalid iso8601 date") Right $ msum $ map (\f -> parseTimeM True defaultTimeLocale f s) fmt
   sh = formatTime defaultTimeLocale $ head fmt
   fmt = ["%FT%T%QZ", "%FT%T%Q%z"]
 
-xmlHTTPHeader :: XMLConverter BS.ByteString
+xmlHTTPHeader :: MonadThrow m => XMLConverter m BS.ByteString
 xmlHTTPHeader = (encodeUtf8 . T.strip X.:<->: decodeUtf8) X.>$< X.content
 
-xmlHTTPDate :: XMLConverter UTCTime
+xmlHTTPDate :: MonadThrow m => XMLConverter m UTCTime
 xmlHTTPDate = X.convert (maybe (Left "invalid HTTP date") Right . parseHTTPDate) formatHTTPDate xmlHTTPHeader
 
-xmlETag :: XMLConverter ETag
+xmlETag :: MonadThrow m => XMLConverter m ETag
 xmlETag = X.convert parseETag renderETag xmlHTTPHeader

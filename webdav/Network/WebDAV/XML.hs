@@ -6,6 +6,7 @@ module Network.WebDAV.XML
   , XML(..)
   ) where
 
+import           Control.Monad.Catch (MonadThrow)
 import qualified Data.Text as T
 import qualified Data.XML.Types as XT
 import qualified Network.URI as URI
@@ -13,10 +14,10 @@ import qualified Text.XML.Stream.Invertible as X
 
 type XMLTrees = [XT.Node]
 type XMLName = XT.Name
-type XMLConverter a = X.Streamer Maybe a
+type XMLConverter m a = X.Streamer m a
 
 class XML a where
-  xmlConvert :: XMLConverter a
+  xmlConvert :: MonadThrow m => XMLConverter m a
 
 instance XML XT.Node where
   xmlConvert = X.passNode
