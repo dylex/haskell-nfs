@@ -15,11 +15,12 @@ import           Network.WebDAV.NFS.GET
 
 webDAVNFS :: NFSRoot -> Wai.Application
 webDAVNFS nfs = resultApplication $ \req -> do
+  let ctx = Context nfs req
   pathref <- maybe (errorResult HTTP.notFound404) (return . NFS.relativeFileReference (nfsRoot nfs))
     $ parsePath nfs $ Wai.pathInfo req
   case Wai.requestMethod req of
-    "GET" -> httpGET nfs req pathref
+    "GET" -> httpGET ctx pathref
     "HEAD" -> do
-      r <- httpGET nfs req pathref
+      r <- httpGET ctx pathref
       return $ emptyResponse (Wai.responseStatus r) (Wai.responseHeaders r)
     _ -> return $ errorResponse HTTP.methodNotAllowed405

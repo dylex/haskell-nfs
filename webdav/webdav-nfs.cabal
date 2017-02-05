@@ -23,14 +23,18 @@ library
     Network.WebDAV.XML
     Network.WebDAV.DAV
     Network.WebDAV.NFS.Types
+    Network.WebDAV.NFS.XML
     Network.WebDAV.NFS.File
     Network.WebDAV.NFS.Property
     Network.WebDAV.NFS.GET
+    -- Network.WebDAV.NFS.PROPFIND
   default-language: Haskell2010
   ghc-options: -Wall
   build-depends:       
     base >=4.8 && <5,
     bytestring,
+    conduit,
+    conduit-extra,
     containers,
     exceptions,
     http-types,
@@ -41,7 +45,10 @@ library
     text,
     time,
     wai,
+    wai-conduit,
+    wai-extra,
     waimwork,
+    xml-conduit,
     xml-types,
     nfs
 

@@ -20,24 +20,24 @@ import           Waimwork.HTTP (parseHTTPDate, formatHTTPDate, parseETag, parseE
 import           Network.WebDAV.NFS.Types
 import           Network.WebDAV.NFS.File
 
-streamFile :: NFSRoot -> NFS.FileHandle -> Word64 -> Word64 -> Wai.StreamingBody
-streamFile nfs fh start end send done = do
-  NFS.READ4res'NFS4_OK (NFS.READ4resok eof lbuf) <- NFS.nfsCall (nfsClient nfs)
+streamFile :: Context -> NFS.FileHandle -> Word64 -> Word64 -> Wai.StreamingBody
+streamFile ctx fh start end send done = do
+  NFS.READ4res'NFS4_OK (NFS.READ4resok eof lbuf) <- NFS.nfsCall (nfsClient $ contextNFS ctx)
     $ NFS.op (NFS.PUTFH4args fh) *> NFS.op (NFS.READ4args NFS.anonymousStateid start $ fromIntegral l)
   let buf = NFS.unLengthArray lbuf
   send $ BSB.byteString buf
   let next = start + fromIntegral (BS.length buf)
   if next >= end || eof
     then done
-    else streamFile nfs fh next end send done
+    else streamFile ctx fh next end send done
   where
   r = end - start
-  l = r `min` fromIntegral (nfsBlockSize nfs)
+  l = r `min` fromIntegral (nfsBlockSize $ contextNFS ctx)
 
-httpGET :: NFSRoot -> Wai.Request -> NFS.FileReference -> IO Wai.Response
-httpGET nfs req pathref = do
+httpGET :: Context -> NFS.FileReference -> IO Wai.Response
+httpGET ctx pathref = do
   fi@FileInfo{..} <-
-    handleNFSException $ NFS.nfsCall (nfsClient nfs)
+    handleNFSException $ NFS.nfsCall (nfsClient $ contextNFS ctx)
       $ getFileInfo pathref
   checkAccess NFS.aCCESS4_READ fi
   when (fileType /= NFS.NF4REG) $
@@ -61,14 +61,14 @@ httpGET nfs req pathref = do
   return $ case ranges' of
     Nothing -> Wai.responseStream HTTP.ok200
       ((HTTP.hContentLength, buildBS sizeb) : headers)
-      (streamFile nfs fileHandle 0 fileSize)
+      (streamFile ctx fileHandle 0 fileSize)
     Just [] -> emptyResponse HTTP.requestedRangeNotSatisfiable416
       $ (HTTP.hContentRange, buildBS $ "bytes */" <> sizeb) : headers
     Just [(a,b)] -> Wai.responseStream HTTP.partialContent206
       ( (HTTP.hContentLength, buildBS $ BSB.word64Dec (succ b - a))
       : (HTTP.hContentRange, buildBS $ "bytes " <> BSB.word64Dec a <> BSB.char8 '-' <> BSB.word64Dec b <> BSB.char8 '/' <> sizeb)
       : headers)
-      (streamFile nfs fileHandle a $ succ b)
+      (streamFile ctx fileHandle a $ succ b)
     Just _ -> errorResponse HTTP.notImplemented501 -- "multipart/byteranges"
   where
   ifmat   = parseETags    <$> header HTTP.hIfMatch
@@ -77,7 +77,7 @@ httpGET nfs req pathref = do
   ifnomod = parseHTTPDate =<< header HTTP.hIfUnmodifiedSince
   ifrange = (\s -> Right <$> parseHTTPDate s <|> Left <$> either (const Nothing) Just (parseETag s)) =<< header HTTP.hIfRange
   ranges  = HTTP.parseByteRanges =<< header HTTP.hRange
-  header h = lookup h $ Wai.requestHeaders req
+  header = requestHeader ctx
   clampr z (HTTP.ByteRangeFrom a) = (a `max` 0, pred z)
   clampr z (HTTP.ByteRangeFromTo a b) = (a `max` 0, b `min` pred z)
   clampr z (HTTP.ByteRangeSuffix e) = (z - e `max` 0, pred z)

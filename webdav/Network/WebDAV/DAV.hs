@@ -1,11 +1,18 @@
 -- |DAV element type declarations, based on RFC4918
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ViewPatterns #-}
 module Network.WebDAV.DAV
-  ( -- * §14 Elements
-    ActiveLock(..)
+  ( -- * §11 Status codes
+    multiStatus207
+  , HTTP.unprocessableEntity422
+  , locked423
+  , failedDependency424
+  , insufficientStorage507
+    -- * §14 Elements
+  , ActiveLock(..)
   , Depth(..)
   , Error(..)
   , Location(..)
@@ -32,6 +39,11 @@ module Network.WebDAV.DAV
   , propertyType
   , PropertyValue
   , propertyContent
+    -- * §16 Errors
+  , ErrorElement(..)
+  , errorElementStatus
+  , errorElementIsPostcondition
+  , ErrorElement'
   ) where
 
 import           Control.Arrow (first)
@@ -58,11 +70,30 @@ import           Waimwork.HTTP (formatHTTPDate, parseHTTPDate, ETag, renderETag,
 
 import           Network.WebDAV.XML
 
+-- |§11.1
+multiStatus207 :: HTTP.Status
+multiStatus207 = HTTP.mkStatus 207 "Multi-Status"
+
+-- |§11.2
+-- unprocessableEntity422 = HTTP.unprocessableEntity422
+
+-- |§11.3
+locked423 :: HTTP.Status
+locked423 = HTTP.mkStatus 423 "Locked"
+
+-- |§11.4
+failedDependency424 :: HTTP.Status
+failedDependency424 = HTTP.mkStatus 424 "Failed Dependency"
+
+-- |§11.5
+insufficientStorage507 :: HTTP.Status
+insufficientStorage507 = HTTP.mkStatus 507 "Insufficient Storage"
+
 davName :: String -> XMLName
 davName n = XT.Name (T.pack n) (Just $ T.pack "DAV:") (Just $ T.pack "D")
 
 davElem :: MonadThrow m => String -> XMLConverter m a -> XMLConverter m a
-davElem = X.tagNoAttr . davName
+davElem = X.tagIgnoreAttrs . davName
 
 -- |§14.1
 data ActiveLock = ActiveLock
@@ -92,7 +123,7 @@ data Depth
   = Depth0
   | Depth1
   | DepthInfinity
-  deriving (Eq, Enum, Bounded)
+  deriving (Eq, Ord, Enum, Bounded)
 
 instance Show Depth where
   showsPrec _ Depth0 = showChar '0'
@@ -105,11 +136,15 @@ instance Read Depth where
   readsPrec _ ('i':'n':'f':'i':'n':'i':'t':'y':r) = [(DepthInfinity, r)]
   readsPrec _ _ = []
 
+instance Monoid Depth where
+  mempty = Depth0
+  mappend = max
+
 instance XML Depth where
   xmlConvert = davElem "depth" X.readShowContent
 
 -- |§14.5
-newtype Error = Error XMLTrees
+newtype Error = Error [ErrorElement']
   deriving (Eq, Show)
 
 instance XML Error where
@@ -424,3 +459,48 @@ xmlHTTPDate = X.convert (maybe (Left "invalid HTTP date") Right . parseHTTPDate)
 
 xmlETag :: MonadThrow m => XMLConverter m ETag
 xmlETag = X.convert parseETag renderETag xmlHTTPHeader
+
+data ErrorElement
+  = LockTokenMatchesRequestURI
+  | LockTokenSubmitted [HRef]
+  | NoConflictingLock [HRef]
+  | NoExternalEntities
+  | PreservedLiveProperties
+  | PropfindFiniteDepth
+  | CannotModifyProtectedProperty
+  deriving (Eq, Show)
+
+instance XML ErrorElement where
+  xmlConvert = [X.biCase|
+      Left (Left (Left (Left (Left (Left ()))))) <-> LockTokenMatchesRequestURI
+      Left (Left (Left (Left (Left (Right l))))) <-> LockTokenSubmitted l
+            Left (Left (Left (Left (Right l))))  <-> NoConflictingLock l
+                  Left (Left (Left (Right ())))  <-> NoExternalEntities
+                        Left (Left (Right ()))   <-> PreservedLiveProperties
+                              Left (Right ())    <-> PropfindFiniteDepth
+                                    Right ()     <-> CannotModifyProtectedProperty|]
+    X.>$<  (davElem "lock-token-matches-request-uri" X.unit
+      X.>|< davElem "lock-token-submitted" (X.manyI xmlHRef)
+      X.>|< davElem "no-conflicting-lock" (X.manyI xmlHRef)
+      X.>|< davElem "no-external-entities" X.unit
+      X.>|< davElem "preserved-live-properties" X.unit
+      X.>|< davElem "propfind-finite-depth" X.unit
+      X.>|< davElem "cannot-modify-protected-property" X.unit)
+
+errorElementStatus :: ErrorElement -> HTTP.Status
+errorElementStatus LockTokenMatchesRequestURI{}    = HTTP.conflict409
+errorElementStatus LockTokenSubmitted{}            = locked423
+errorElementStatus NoConflictingLock{}             = locked423
+errorElementStatus NoExternalEntities{}            = HTTP.forbidden403
+errorElementStatus PreservedLiveProperties{}       = HTTP.conflict409
+errorElementStatus PropfindFiniteDepth{}           = HTTP.forbidden403
+errorElementStatus CannotModifyProtectedProperty{} = HTTP.forbidden403
+
+errorElementIsPostcondition :: ErrorElement -> Bool
+errorElementIsPostcondition PreservedLiveProperties{} = True
+errorElementIsPostcondition _ = False
+
+type ErrorElement' = Either XT.Node ErrorElement
+
+instance XML ErrorElement' where
+  xmlConvert = Inv.switch X.>$< (xmlConvert X.>|< xmlConvert)
