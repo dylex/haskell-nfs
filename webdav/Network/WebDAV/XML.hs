@@ -5,16 +5,19 @@ module Network.WebDAV.XML
   , XMLConverter
   , XML(..)
   , xmlParser
+  , xmlRender
   ) where
 
 import           Control.Monad.Catch (MonadThrow)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Builder as BSB
 import qualified Data.Conduit as C
 import qualified Data.Text as T
 import qualified Data.XML.Types as XT
 import qualified Network.URI as URI
 import qualified Text.XML.Stream.Invertible as X
 import qualified Text.XML.Stream.Parse as XP
+import qualified Text.XML.Stream.Render as XR
 
 type XMLTrees = [XT.Node]
 type XMLName = XT.Name
@@ -43,3 +46,6 @@ instance XML a => XML [a] where
 
 xmlParser :: (XML a, MonadThrow m) => C.Sink BS.ByteString m a
 xmlParser = XP.parseBytes XP.def C..| X.streamerParser "invalid XML document" xmlConvert
+
+xmlRender :: (XML a, MonadThrow m) => a -> C.Source m BSB.Builder
+xmlRender x = X.streamerRender xmlConvert x C..| XR.renderBuilder XR.def

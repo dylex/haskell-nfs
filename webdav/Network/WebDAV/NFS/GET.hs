@@ -18,6 +18,8 @@ import qualified Network.Wai as Wai
 import           Waimwork.HTTP (parseHTTPDate, formatHTTPDate, parseETag, parseETags, renderETag, matchETag)
 
 import           Network.WebDAV.NFS.Types
+import           Network.WebDAV.NFS.Request
+import           Network.WebDAV.NFS.Response
 import           Network.WebDAV.NFS.File
 
 streamFile :: Context -> NFS.FileHandle -> Word64 -> Word64 -> Wai.StreamingBody
@@ -41,7 +43,7 @@ httpGET ctx pathref = do
       $ getFileInfo pathref
   checkAccess NFS.aCCESS4_READ fi
   when (fileType /= NFS.NF4REG) $
-    errorResult HTTP.methodNotAllowed405
+    result $ statusResponse HTTP.methodNotAllowed405
   let headers =
         [ (HTTP.hETag, renderETag fileETag)
         , (HTTP.hLastModified, formatHTTPDate fileMTime)
@@ -55,9 +57,9 @@ httpGET ctx pathref = do
       ranges' = guard isrange >> mapMaybe (checkr . clampr (toInteger fileSize)) <$> ranges
       sizeb = BSB.word64Dec fileSize
   unless (isnomat || ismod) $
-    emptyResult HTTP.notModified304 headers
+    result $ emptyResponse HTTP.notModified304 headers
   unless (ismat || isnomod) $
-    emptyResult HTTP.preconditionFailed412 headers
+    result $ emptyResponse HTTP.preconditionFailed412 headers
   return $ case ranges' of
     Nothing -> Wai.responseStream HTTP.ok200
       ((HTTP.hContentLength, buildBS sizeb) : headers)
@@ -69,7 +71,7 @@ httpGET ctx pathref = do
       : (HTTP.hContentRange, buildBS $ "bytes " <> BSB.word64Dec a <> BSB.char8 '-' <> BSB.word64Dec b <> BSB.char8 '/' <> sizeb)
       : headers)
       (streamFile ctx fileHandle a $ succ b)
-    Just _ -> errorResponse HTTP.notImplemented501 -- "multipart/byteranges"
+    Just _ -> statusResponse HTTP.notImplemented501 -- "multipart/byteranges"
   where
   ifmat   = parseETags    <$> header HTTP.hIfMatch
   ifnomat = parseETags    <$> header HTTP.hIfNoneMatch

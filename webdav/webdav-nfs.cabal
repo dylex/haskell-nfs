@@ -23,7 +23,8 @@ library
     Network.WebDAV.XML
     Network.WebDAV.DAV
     Network.WebDAV.NFS.Types
-    Network.WebDAV.NFS.XML
+    Network.WebDAV.NFS.Request
+    Network.WebDAV.NFS.Response
     Network.WebDAV.NFS.File
     Network.WebDAV.NFS.Property
     Network.WebDAV.NFS.GET
