@@ -38,7 +38,8 @@ statusResponse :: HTTP.Status -> Wai.Response
 statusResponse s = emptyResponse s []
 
 xmlResponse :: XML a => HTTP.Status -> HTTP.ResponseHeaders -> a -> Wai.Response
-xmlResponse s h x = WaiC.responseSource s h $ C.mapOutput C.Chunk $ xmlRender x
+xmlResponse s h x = WaiC.responseSource s ((HTTP.hContentType, "application/xml; charset=\"utf-8\"") : h)
+  $ C.mapOutput C.Chunk $ xmlRender x
 
 errorResponse :: ErrorElement -> Wai.Response
 errorResponse e = xmlResponse (errorElementStatus e) [] e

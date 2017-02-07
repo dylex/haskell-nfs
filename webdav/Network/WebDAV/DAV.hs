@@ -293,7 +293,7 @@ data PropFind
   deriving (Eq, Show)
 
 instance XML PropFind where
-  xmlConvert = [X.biCase|
+  xmlConvert = davElem "propfind" $ [X.biCase|
       Left (Left  ())       <-> PropName
       Left (Right Nothing)  <-> PropFind True []
       Left (Right (Just l)) <-> PropFind True l
