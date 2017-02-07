@@ -1,9 +1,9 @@
 {-# LANGUAGE TupleSections #-}
 module Network.WebDAV.NFS.Property
-  ( standardProperties
+  ( PropertySet
+  , standardProperties
   , propFindSet
   , fileInfoProperty
-  , getProperty
   ) where
 
 import qualified Data.Set as Set
@@ -16,11 +16,11 @@ type PropertySet = Set.Set PropertyType
 
 standardProperties :: PropertySet
 standardProperties = Set.fromList
-  [ propertyType CreationDate
-  , propertyType GetContentLength
-  , propertyType GetETag
-  , propertyType GetLastModified
-  , propertyType ResourceType
+  [ CreationDate     Proxy
+  , GetContentLength Proxy
+  , GetETag          Proxy
+  , GetLastModified  Proxy
+  , ResourceType     Proxy
   ]
 
 propFindSet :: PropFind -> Maybe PropertySet
@@ -40,6 +40,3 @@ fileInfoProperty GetETag{} = GetETag $. fileETag
 fileInfoProperty GetLastModified{} = GetLastModified $. fileMTime
 fileInfoProperty ResourceType{} = ResourceType $. (, []) . (==) NFS.NF4DIR . fileType
 fileInfoProperty _ = const Nothing
-
-getProperty :: PropertyContent c => Property t -> FileInfo -> Maybe (Property c)
-getProperty = fileInfoProperty

@@ -3,6 +3,7 @@ module Network.WebDAV.NFS.Types
   ( NFSRoot(..)
   , Context(..)
   , buildBS
+  , nfsCall
   ) where
 
 import qualified Data.ByteString as BS
@@ -11,6 +12,8 @@ import qualified Data.ByteString.Lazy as BSL
 import           Data.Word (Word32)
 import qualified Network.NFS.V4 as NFS
 import qualified Network.Wai as Wai
+
+import           Network.WebDAV.NFS.Response
 
 data NFSRoot = NFSRoot
   { nfsClient :: NFS.Client
@@ -23,7 +26,11 @@ data NFSRoot = NFSRoot
 data Context = Context
   { contextNFS :: !NFSRoot
   , contextRequest :: !Wai.Request
+  , contextPath :: NFS.FileReference
   }
 
 buildBS :: BSB.Builder -> BS.ByteString
 buildBS = BSL.toStrict . BSB.toLazyByteString
+
+nfsCall :: Context -> NFS.Ops a -> IO a
+nfsCall ctx = handleNFSException . NFS.nfsCall (nfsClient $ contextNFS ctx)

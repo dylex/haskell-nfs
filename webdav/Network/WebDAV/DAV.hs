@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ViewPatterns #-}
 module Network.WebDAV.DAV
@@ -14,7 +15,9 @@ module Network.WebDAV.DAV
     -- * §14 Elements
   , ActiveLock(..)
   , Depth(..)
-  , Error(..)
+  , predDepth
+  , Error
+  , HRef
   , Location(..)
   , LockEntry(..)
   , LockInfo(..)
@@ -24,11 +27,13 @@ module Network.WebDAV.DAV
   , LockType(..)
   , MultiStatus(..)
   , Owner(..)
+  , Prop
   , PropertyUpdate(..)
   , PropUpdate(..)
   , PropFind(..)
   , PropStat(..)
   , Response(..)
+  , responseHRefs
   , ResponseDescription
   , Status
   , Timeout(..)
@@ -36,8 +41,9 @@ module Network.WebDAV.DAV
   , PropertyContent
   , Property(..)
   , PropertyType
-  , propertyType
+  , Proxy(Proxy)
   , PropertyValue
+  , mapProperty
   , propertyContent
     -- * §16 Errors
   , ErrorElement(..)
@@ -143,13 +149,16 @@ instance Monoid Depth where
 instance XML Depth where
   xmlConvert = davElem "depth" X.readShowContent
 
--- |§14.5
-newtype Error = Error [ErrorElement']
-  deriving (Eq, Show)
+predDepth :: Depth -> Depth
+predDepth DepthInfinity = DepthInfinity
+predDepth Depth1 = Depth0
+predDepth Depth0 = error "predDepth Depth0"
 
-instance XML Error where
-  xmlConvert = davElem "error" $ [X.biCase|x <-> Error x|]
-    X.>$< xmlConvert
+-- |§14.5
+type Error = [ErrorElement']
+
+xmlError :: MonadThrow m => XMLConverter m Error
+xmlError = davElem "error" xmlConvert
 
 -- |§14.7
 type HRef = URI
@@ -298,37 +307,52 @@ instance XML PropFind where
 data PropStat = PropStat
   { propStatProp :: Prop MaybeValue
   , propStatus :: Status
-  , propStatError :: Maybe Error
+  , propStatError :: Error
   , propStatResonseDescription :: Maybe ResponseDescription
   }
   deriving (Eq, Show)
 
 instance XML PropStat where
   xmlConvert = davElem "propstat" $ [X.biCase|
-      (((p, s), e), r) <-> PropStat p s e r|]
+      (((p, s), Nothing), r) <-> PropStat p s [] r
+      (((p, s), (Just e)), r) <-> PropStat p s e r|]
     X.>$<  (xmlProp
       X.>*< xmlStatus
-      X.>*< X.optionalI xmlConvert
+      X.>*< X.optionalI xmlError
       X.>*< X.optionalI xmlResponseDescription)
 
 -- |§14.24
-data Response = Response
-  { responseHRefs :: [HRef]
-  , responseStatus :: Maybe Status
-  , responsePropStat :: [PropStat]
-  , responseError :: Maybe Error
-  , responseDescription :: Maybe ResponseDescription
-  , responseLocation :: Maybe Location
-  }
+data Response
+  = Response
+    { responseHRef :: HRef
+    , responseHRef_ :: [HRef]
+    , responseStatus :: Status
+    , responseError :: Error
+    , responseDescription :: Maybe ResponseDescription
+    , responseLocation :: Maybe Location
+    }
+  | ResponseProp
+    { responseHRef :: HRef
+    , responsePropStat :: [PropStat]
+    , responseError :: Error
+    , responseDescription :: Maybe ResponseDescription
+    , responseLocation :: Maybe Location
+    }
   deriving (Eq, Show)
+
+responseHRefs :: Response -> [HRef]
+responseHRefs Response{ responseHRef = h, responseHRef_ = l } = h:l
+responseHRefs ResponseProp{ responseHRef = h } = [h]
 
 instance XML Response where
   xmlConvert = davElem "response" $ [X.biCase|
-      (((((h, s), p), e), d), l) <-> Response h s p e d l|]
-    X.>$<  (X.manyI xmlHRef -- +
-      X.>*< X.optionalI xmlStatus
-      X.>*< X.manyI xmlConvert
-      X.>*< X.optionalI xmlConvert
+      ((((h, Left (r, s)), Nothing), d), l) <-> Response   h r s [] d l
+      ((((h, Left (r, s)), Just e ), d), l) <-> Response   h r s e d l
+      ((((h, Right p    ), Nothing), d), l) <-> ResponseProp h p [] d l
+      ((((h, Right p    ), Just e ), d), l) <-> ResponseProp h p e d l|]
+    X.>$<  (xmlHRef
+      X.>*< (X.manyI xmlHRef X.>*< xmlStatus X.>|< X.manyI xmlConvert)
+      X.>*< X.optionalI xmlError
       X.>*< X.optionalI xmlResponseDescription
       X.>*< X.optionalI xmlConvert)
 
@@ -440,8 +464,18 @@ instance PropertyContent c => XML (Property c) where
 type PropertyType = Property WithoutValue
 type PropertyValue = Property WithValue
 
-propertyType :: (WithoutValue a -> PropertyType) -> PropertyType
-propertyType c = c Proxy
+mapProperty :: (forall a . c a -> d a) -> Property c -> Property d
+mapProperty f (CreationDate       x) = CreationDate       $ f x
+mapProperty f (DisplayName        x) = DisplayName        $ f x
+mapProperty f (GetContentLanguage x) = GetContentLanguage $ f x
+mapProperty f (GetContentLength   x) = GetContentLength   $ f x
+mapProperty f (GetContentType     x) = GetContentType     $ f x
+mapProperty f (GetETag            x) = GetETag            $ f x
+mapProperty f (GetLastModified    x) = GetLastModified    $ f x
+mapProperty f (LockDiscovery      x) = LockDiscovery      $ f x
+mapProperty f (ResourceType       x) = ResourceType       $ f x
+mapProperty f (SupportedLock      x) = SupportedLock      $ f x
+mapProperty f (Property n         x) = Property n         $ f x
 
 type DateTime = UTCTime
 

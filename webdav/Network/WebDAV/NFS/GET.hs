@@ -36,11 +36,11 @@ streamFile ctx fh start end send done = do
   r = end - start
   l = r `min` fromIntegral (nfsBlockSize $ contextNFS ctx)
 
-httpGET :: Context -> NFS.FileReference -> IO Wai.Response
-httpGET ctx pathref = do
+httpGET :: Context -> IO Wai.Response
+httpGET ctx = do
   fi@FileInfo{..} <-
-    handleNFSException $ NFS.nfsCall (nfsClient $ contextNFS ctx)
-      $ getFileInfo pathref
+    nfsCall ctx
+      $ getFileInfo $ contextPath ctx
   checkAccess NFS.aCCESS4_READ fi
   when (fileType /= NFS.NF4REG) $
     result $ statusResponse HTTP.methodNotAllowed405

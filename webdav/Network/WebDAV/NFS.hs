@@ -13,17 +13,20 @@ import           Network.WebDAV.NFS.Types
 import           Network.WebDAV.NFS.Response
 import           Network.WebDAV.NFS.File
 import           Network.WebDAV.NFS.GET
+import           Network.WebDAV.NFS.PROPFIND
 
 webDAVNFS :: NFSRoot -> Wai.Application
-webDAVNFS nfs = resultApplication $ \req -> do
-  let ctx = Context nfs req
-  pathref <- maybe
+webDAVNFS nfs = resultApplication $ \req -> handleDAVError $ do
+  ctx <- Context nfs req <$> maybe
     (result $ statusResponse HTTP.notFound404)
     (return . NFS.relativeFileReference (nfsRoot nfs))
-    $ parsePath nfs $ Wai.pathInfo req
-  case Wai.requestMethod req of
-    "GET" -> httpGET ctx pathref
-    "HEAD" -> do
-      r <- httpGET ctx pathref
-      return $ emptyResponse (Wai.responseStatus r) (Wai.responseHeaders r)
-    _ -> return $ statusResponse HTTP.methodNotAllowed405
+    (parsePath nfs $ Wai.pathInfo req)
+  Wai.mapResponseHeaders (("DAV", "1") :) <$>
+    case Wai.requestMethod req of
+      "OPTIONS" -> return $ statusResponse HTTP.ok200
+      "GET" -> httpGET ctx
+      "HEAD" -> do
+        r <- httpGET ctx
+        return $ emptyResponse (Wai.responseStatus r) (Wai.responseHeaders r)
+      "PROPFIND" -> httpPROPFIND ctx
+      _ -> return $ statusResponse HTTP.methodNotAllowed405

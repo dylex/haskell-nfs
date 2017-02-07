@@ -6,12 +6,18 @@ module Network.WebDAV.NFS.Response
   , exceptionResponse
   , xmlResponse
   , errorResponse
+  , DAVError(..)
+  , davErrorStatus
+  , davErrorElements
+  , throwDAVError
+  , handleDAVError
   , handleNFSException
   ) where
 
-import           Control.Exception (handle, Exception, displayException)
+import           Control.Exception (Exception, displayException, throwIO, handle)
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import qualified Data.Conduit as C
+import           Data.Typeable (Typeable)
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.NFS.V4 as NFS
 import qualified Network.Wai as Wai
@@ -37,6 +43,31 @@ xmlResponse s h x = WaiC.responseSource s h $ C.mapOutput C.Chunk $ xmlRender x
 errorResponse :: ErrorElement -> Wai.Response
 errorResponse e = xmlResponse (errorElementStatus e) [] e
 
+data DAVError
+  = DAVError ErrorElement
+  | DAVStatus HTTP.Status
+  deriving (Typeable, Show)
+
+instance Exception DAVError
+
+davErrorStatus :: DAVError -> HTTP.Status
+davErrorStatus (DAVError e) = errorElementStatus e
+davErrorStatus (DAVStatus s) = s
+
+davErrorElements :: DAVError -> Error
+davErrorElements (DAVError e) = [Right e]
+davErrorElements (DAVStatus _) = []
+
+davErrorResponse :: DAVError -> Wai.Response
+davErrorResponse (DAVError e) = errorResponse e
+davErrorResponse (DAVStatus s) = statusResponse s
+
+throwDAVError :: DAVError -> IO a
+throwDAVError = throwIO
+
+handleDAVError :: IO a -> IO a
+handleDAVError = handle $ result . davErrorResponse
+
 nfsErrorStatus :: NFS.Nfsstat4 -> HTTP.Status
 nfsErrorStatus NFS.NFS4_OK = HTTP.ok200
 nfsErrorStatus NFS.NFS4ERR_PERM = HTTP.forbidden403
@@ -51,4 +82,4 @@ nfsErrorStatus NFS.NFS4ERR_DQUOT = insufficientStorage507
 nfsErrorStatus _ = HTTP.internalServerError500
 
 handleNFSException :: IO a -> IO a
-handleNFSException = handle $ \e -> result $ exceptionResponse (maybe HTTP.internalServerError500 nfsErrorStatus (NFS.nfsExceptionStatus e)) e
+handleNFSException = handle $ throwDAVError . DAVStatus . maybe HTTP.internalServerError500 nfsErrorStatus . NFS.nfsExceptionStatus

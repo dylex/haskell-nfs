@@ -26,6 +26,9 @@ type XMLConverter m a = X.Streamer m a
 class XML a where
   xmlConvert :: MonadThrow m => XMLConverter m a
 
+instance XML () where
+  xmlConvert = X.unit
+
 instance XML XT.Node where
   xmlConvert = X.passNode
 
@@ -41,7 +44,7 @@ instance XML URI.URI where
     (\u -> URI.uriToString id u "")
     X.stringContent
 
-instance XML a => XML [a] where
+instance {-# OVERLAPPABLE #-} XML a => XML [a] where
   xmlConvert = X.manyI xmlConvert
 
 xmlParser :: (XML a, MonadThrow m) => C.Sink BS.ByteString m a

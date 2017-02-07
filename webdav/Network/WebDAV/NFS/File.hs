@@ -71,4 +71,4 @@ getFileInfo fr = fi <$> (NFS.opFileReference fr
   fi _ _ e = error $ "GETATTR: " ++ show e -- 500 error
 
 checkAccess :: NFS.Uint32_t -> FileInfo -> IO ()
-checkAccess a i = unless (a .&. fileAccess i == a) $ result $ statusResponse HTTP.forbidden403
+checkAccess a i = unless (a .&. fileAccess i == a) $ throwDAVError $ DAVStatus HTTP.forbidden403
