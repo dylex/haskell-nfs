@@ -245,9 +245,15 @@ instance XML LockType where
 -- |§14.16
 data MultiStatus = MultiStatus
   { multiStatusResponses :: [Response]
-  , multiStatusResponseDescription :: ResponseDescription
+  , multiStatusResponseDescription :: Maybe ResponseDescription
   }
   deriving (Eq, Show)
+
+instance XML MultiStatus where
+  xmlConvert = davElem "multistatus" $ [X.biCase|
+      (l, d) <-> MultiStatus l d|]
+    X.>$<  (xmlConvert
+      X.>*< X.optionalI xmlResponseDescription)
 
 -- |§14.17
 newtype Owner = Owner XMLTrees

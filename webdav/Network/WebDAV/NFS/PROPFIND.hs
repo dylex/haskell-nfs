@@ -53,7 +53,7 @@ httpPROPFIND :: Context -> IO Wai.Response
 httpPROPFIND ctx = do
   when (depth == DepthInfinity) $ result $ errorResponse PropfindFiniteDepth
   req <- propFindSet . fromMaybe (PropFind True []) <$> requestXML ctx
-  xmlResponse HTTP.ok200 []
-    <$> doPropFind ctx req depth
+  top <- doPropFind ctx req depth
+  return $ xmlResponse multiStatus207 [] $ MultiStatus [top] Nothing
   where
   depth = fromMaybe Depth1 {- XXX: Infinity -} $ requestDepth ctx
