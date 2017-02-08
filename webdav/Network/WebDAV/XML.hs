@@ -50,6 +50,9 @@ instance {-# OVERLAPPABLE #-} XML a => XML [a] where
 xmlParser :: (XML a, MonadThrow m) => C.Sink BS.ByteString m a
 xmlParser = XP.parseBytes XP.def C..| X.streamerParser "invalid XML document" xmlConvert
 
-xmlRender :: (XML a, MonadThrow m) => a -> C.Source m BSB.Builder
-xmlRender x = (C.yield XT.EventBeginDocument >> X.streamerRender xmlConvert x)
+renderXML :: Monad m => C.Conduit XT.Event m BSB.Builder
+renderXML = (C.yield XT.EventBeginDocument >> C.awaitForever C.yield)
   C..| XR.renderBuilder XR.def
+
+xmlRender :: (XML a, MonadThrow m) => a -> C.Source m BSB.Builder
+xmlRender x = X.streamerRender xmlConvert x C..| renderXML

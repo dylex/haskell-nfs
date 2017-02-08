@@ -27,6 +27,7 @@ module Network.WebDAV.DAV
   , LockToken(..)
   , LockType(..)
   , MultiStatus(..)
+  , streamMultiStatus
   , Owner(..)
   , Prop
   , PropertyUpdate(..)
@@ -59,6 +60,7 @@ import           Control.Monad.Catch (MonadThrow)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Char (isDigit)
+import qualified Data.Conduit as C
 import           Data.Functor.Classes (Show1(..), Eq1(..))
 import           Data.Functor.Identity (Identity(..))
 import qualified Data.Invertible as Inv
@@ -73,6 +75,7 @@ import qualified Data.XML.Types as XT
 import           Network.URI (URI)
 import qualified Network.HTTP.Types.Status as HTTP
 import qualified Text.XML.Stream.Invertible as X
+import qualified Text.XML.Stream.Render as XR
 import           Waimwork.HTTP (formatHTTPDate, parseHTTPDate, ETag, renderETag, parseETag)
 
 import           Network.WebDAV.XML
@@ -254,6 +257,11 @@ instance XML MultiStatus where
       (l, d) <-> MultiStatus l d|]
     X.>$<  (xmlConvert
       X.>*< X.optionalI xmlResponseDescription)
+
+streamMultiStatus :: MonadThrow m => Maybe ResponseDescription -> C.Source m Response -> C.Source m XT.Event
+streamMultiStatus d rs = XR.tag (davName "multistatus") mempty $ do
+  rs C..| C.awaitForever (C.toProducer . X.streamerRender xmlConvert)
+  mapM_ (X.streamerRender xmlResponseDescription) d
 
 -- |§14.17
 newtype Owner = Owner XMLTrees
