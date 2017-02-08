@@ -51,6 +51,7 @@ library
     waimwork,
     xml-conduit,
     xml-types,
+    ONC-RPC,
     nfs
 
 executable webdavnfs

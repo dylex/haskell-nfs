@@ -10,11 +10,13 @@ module Network.WebDAV.NFS.File
 import           Control.Monad (unless)
 import           Data.Bits ((.&.), (.|.))
 import qualified Data.ByteString.Builder as BSB
+import           Data.List (foldl')
 import qualified Data.Text as T
 import           Data.Time.Clock (UTCTime)
 import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import           Data.Word (Word64)
 import qualified Network.HTTP.Types as HTTP
+import           Network.ONCRPC.XDR.Array (emptyBoundedLengthArray)
 import qualified Network.NFS.V4 as NFS
 import           Waimwork.HTTP (ETag(..))
 
@@ -35,9 +37,28 @@ data FileInfo = FileInfo
   , fileType :: NFS.Nfs_ftype4
   , fileETag :: ETag
   , fileSize :: Word64
-  , fileCTime :: UTCTime
+  , fileCTime :: Maybe UTCTime
   , fileMTime :: UTCTime
   }
+
+emptyFileInfo :: FileInfo
+emptyFileInfo = FileInfo
+  { fileHandle = emptyBoundedLengthArray
+  , fileAccess = 0
+  , fileType = NFS.NF4REG
+  , fileETag = WeakETag ""
+  , fileSize = 0
+  , fileCTime = Nothing
+  , fileMTime = posixSecondsToUTCTime 0
+  }
+
+updateFileAttr :: FileInfo -> NFS.AttrVal -> FileInfo
+updateFileAttr f (NFS.AttrValType       x) = f{ fileType = x }
+updateFileAttr f (NFS.AttrValChange     x) = f{ fileETag = StrongETag $ buildBS $ BSB.word64Hex x }
+updateFileAttr f (NFS.AttrValSize       x) = f{ fileSize = x }
+updateFileAttr f (NFS.AttrValTimeCreate x) = f{ fileCTime = Just $ posixSecondsToUTCTime $ NFS.decodeTime x }
+updateFileAttr f (NFS.AttrValTimeModify x) = f{ fileMTime = posixSecondsToUTCTime $ NFS.decodeTime x }
+updateFileAttr f _ = f
 
 getFileInfo :: NFS.FileReference -> NFS.Ops FileInfo
 getFileInfo fr = fi <$> (NFS.opFileReference fr
@@ -52,22 +73,15 @@ getFileInfo fr = fi <$> (NFS.opFileReference fr
     , NFS.AttrTypeTimeModify
     ]))
   where
-  fi fh access (Right
-    [ NFS.AttrValType ftyp
-    , NFS.AttrValChange tag
-    , NFS.AttrValSize size
-    , NFS.AttrValTimeCreate ctime
-    , NFS.AttrValTimeModify mtime
-    ]) =
-    FileInfo
+  fi fh access (Right al@
+    ( NFS.AttrValType _
+    : NFS.AttrValChange _
+    : NFS.AttrValSize _
+    : _)) =
+    foldl' updateFileAttr emptyFileInfo
       { fileHandle = fh
       , fileAccess = access
-      , fileType = ftyp
-      , fileETag = StrongETag $ buildBS $ BSB.word64Hex tag
-      , fileSize = size
-      , fileCTime = posixSecondsToUTCTime $ NFS.decodeTime ctime
-      , fileMTime = posixSecondsToUTCTime $ NFS.decodeTime mtime
-      }
+      } al
   fi _ _ e = error $ "GETATTR: " ++ show e -- 500 error
 
 checkAccess :: NFS.Uint32_t -> FileInfo -> IO ()

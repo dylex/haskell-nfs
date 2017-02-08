@@ -34,7 +34,7 @@ c $. f = Just . c . return . f
 infix 1 $.
 
 fileInfoProperty :: PropertyContent c => Property t -> FileInfo -> Maybe (Property c)
-fileInfoProperty CreationDate{} = CreationDate $. fileCTime
+fileInfoProperty CreationDate{} = fmap (CreationDate . return) . fileCTime
 fileInfoProperty GetContentLength{} = GetContentLength $. fileSize
 fileInfoProperty GetETag{} = GetETag $. fileETag
 fileInfoProperty GetLastModified{} = GetLastModified $. fileMTime
