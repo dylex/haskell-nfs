@@ -1,4 +1,5 @@
 -- |DAV element type declarations, based on RFC4918
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -58,7 +59,7 @@ import           Control.Monad.Catch (MonadThrow)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BSC
 import           Data.Char (isDigit)
-import           Data.Functor.Classes (Show1, Eq1)
+import           Data.Functor.Classes (Show1(..), Eq1(..))
 import           Data.Functor.Identity (Identity(..))
 import qualified Data.Invertible as Inv
 import           Data.Monoid (Alt(..))
@@ -398,6 +399,13 @@ class (Traversable c, Monad c, Show1 c, Eq1 c) => PropertyContent c where
 type WithoutValue = Proxy
 type WithValue = Identity
 type MaybeValue = Maybe
+
+#if !MIN_VERSION_base(4,9,0)
+instance Eq1 Proxy where
+  eq1 _ _ = True
+instance Show1 Proxy where
+  showsPrec1 _ _ = showString "Proxy"
+#endif
 
 instance PropertyContent Proxy where
   xmlPropertyContent _ = X.pureI Proxy

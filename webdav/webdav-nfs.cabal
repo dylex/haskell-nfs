@@ -45,6 +45,7 @@ library
     network-uri,
     text,
     time,
+    transformers,
     wai,
     wai-conduit,
     wai-extra,
