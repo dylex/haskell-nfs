@@ -10,7 +10,7 @@ import qualified Data.Set as Set
 import qualified Network.NFS.V4 as NFS
 
 import           Network.WebDAV.DAV
-import           Network.WebDAV.NFS.File
+import           Network.WebDAV.NFS.Types
 
 type PropertySet = Set.Set PropertyType
 

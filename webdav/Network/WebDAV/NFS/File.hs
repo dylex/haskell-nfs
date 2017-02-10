@@ -2,25 +2,26 @@
 {-# LANGUAGE RecordWildCards #-}
 module Network.WebDAV.NFS.File
   ( parsePath
-  , FileInfo(..)
+  , nfsFileCall
   , fileInfoBitmap
   , decodeFileInfo
   , getFileInfo
   , checkFileInfo
+  , methodNotAllowedResponse
   ) where
 
 import           Control.Monad (guard, when, unless)
 import           Data.Bits ((.&.), (.|.))
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import           Data.List (foldl')
 import           Data.Maybe (isNothing)
 import qualified Data.Text as T
-import           Data.Time.Clock (UTCTime)
 import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
-import           Data.Word (Word64)
 import qualified Network.HTTP.Types as HTTP
 import           Network.ONCRPC.XDR.Array (emptyBoundedLengthArray)
 import qualified Network.NFS.V4 as NFS
+import qualified Network.Wai as Wai
 import           Waimwork.HTTP (ETag(..))
 
 import           Network.WebDAV.NFS.Types
@@ -31,16 +32,9 @@ parsePath nfs ("":l) = parsePath nfs l
 parsePath nfs (f:l) = guard (validFileName nfs f) >> (NFS.StrCS f :) <$> parsePath nfs l
 parsePath _ [] = return []
 
-data FileInfo = FileInfo
-  { fileHandle :: NFS.FileHandle
-  , fileAccess :: NFS.Uint32_t
-  , fileType :: Maybe NFS.Nfs_ftype4
-  , fileETag :: ETag
-  , fileSize :: Word64
-  , fileCTime :: Maybe UTCTime
-  , fileMTime :: UTCTime
-  , fileStatus :: NFS.Nfsstat4
-  }
+nfsFileCall :: Context -> NFS.Ops a -> IO a
+nfsFileCall ctx ops = nfsCall (contextNFS ctx)
+  $ NFS.op (NFS.PUTFH4args (fileHandle (contextFile ctx))) *> ops
 
 emptyFileInfo :: FileInfo
 emptyFileInfo = FileInfo
@@ -99,3 +93,13 @@ checkFileInfo a i = do
     $ throwDAVError $ DAVStatus HTTP.internalServerError500
   unless (a .&. fileAccess i == a)
     $ throwDAVError $ DAVStatus HTTP.forbidden403
+
+fileAcceptMethods :: FileInfo -> [HTTP.Method]
+fileAcceptMethods i = ["OPTIONS", "PROPFIND"] ++ case fileType i of
+  Just NFS.NF4REG -> ["GET", "HEAD"]
+  _ -> []
+
+methodNotAllowedResponse :: FileInfo -> Wai.Response
+methodNotAllowedResponse i = emptyResponse HTTP.methodNotAllowed405
+  [ (HTTP.hAccept, BS.intercalate "," $ fileAcceptMethods i)
+  ]

@@ -19,7 +19,7 @@ webDAVNFS :: NFSRoot -> Wai.Application
 webDAVNFS nfs = resultApplication $ \req -> handleDAVError $ do
   ctx <- Context nfs req <$> maybe
     (result $ statusResponse HTTP.notFound404)
-    (return . NFS.relativeFileReference (nfsRoot nfs))
+    (nfsCall nfs . getFileInfo . NFS.relativeFileReference (nfsRoot nfs))
     (parsePath nfs $ Wai.pathInfo req)
   Wai.mapResponseHeaders (("DAV", "1") :) <$>
     case Wai.requestMethod req of
@@ -29,4 +29,4 @@ webDAVNFS nfs = resultApplication $ \req -> handleDAVError $ do
         r <- httpGET ctx
         return $ emptyResponse (Wai.responseStatus r) (Wai.responseHeaders r)
       "PROPFIND" -> httpPROPFIND ctx
-      _ -> return $ statusResponse HTTP.methodNotAllowed405
+      _ -> return $ methodNotAllowedResponse $ contextFile ctx

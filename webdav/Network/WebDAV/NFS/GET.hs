@@ -37,13 +37,10 @@ streamFile ctx fh start end send done = do
   l = r `min` fromIntegral (nfsBlockSize $ contextNFS ctx)
 
 httpGET :: Context -> IO Wai.Response
-httpGET ctx = do
-  fi@FileInfo{..} <-
-    nfsCall ctx
-      $ getFileInfo $ contextPath ctx
-  checkFileInfo NFS.aCCESS4_READ fi
+httpGET ctx@Context{ contextFile = FileInfo{..} } = do
+  checkFileInfo NFS.aCCESS4_READ $ contextFile ctx
   when (fileType /= Just NFS.NF4REG) $
-    result $ statusResponse HTTP.methodNotAllowed405
+    result $ methodNotAllowedResponse $ contextFile ctx
   let headers =
         [ (HTTP.hETag, renderETag fileETag)
         , (HTTP.hLastModified, formatHTTPDate fileMTime)

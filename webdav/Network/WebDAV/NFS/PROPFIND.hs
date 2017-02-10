@@ -38,48 +38,47 @@ fileProps fi = ps . partitionEithers . map gp . Set.toList where
     | Just p <- fileInfoProperty pn fi = Right p
     | otherwise = Left pn
 
-propFindFile :: Context -> Maybe PropertySet -> FileInfo -> IO Response
-propFindFile ctx pset fi = fmap res $ try $ do
-  checkFileInfo 0 fi
+propFindFile :: Maybe PropertySet -> Context -> IO Response
+propFindFile pset ctx = fmap res $ try $ do
+  checkFileInfo 0 $ contextFile ctx
   return $ maybe
     (return $ okPropStat $ mapProperty propertyContent <$> Set.toList standardProperties)
-    (fileProps fi)
+    (fileProps $ contextFile ctx)
     pset
   where
   res x = ResponseProp (requestHRef ctx) (either
     (\e -> [PropStat (mapProperty propertyContent <$> foldMap Set.toList pset) (davErrorStatus e) (davErrorElements e) Nothing])
     id x) [] Nothing Nothing
 
-propFindDirlist :: Context -> Maybe PropertySet -> Depth -> NFS.Entry4 -> C.ConduitM () Response IO NFS.Nfs_cookie4
-propFindDirlist ctx pset depth (NFS.Entry4 cook name attrs next) = do
-  mapM_ (\ctx' -> propFindEntry ctx' pset depth $ decodeFileInfo attrs)
-    $ subContext ctx =<< fromOpaque name
-  maybe (return cook) (propFindDirlist ctx pset depth) next
+propFindDirlist :: Maybe PropertySet -> Depth -> Context -> NFS.Entry4 -> C.ConduitM () Response IO NFS.Nfs_cookie4
+propFindDirlist pset depth ctx (NFS.Entry4 cook name attrs next) = do
+  mapM_ (propFindEntry pset depth)
+    $ subContext ctx (decodeFileInfo attrs) =<< fromOpaque name
+  maybe (return cook) (propFindDirlist pset depth ctx) next
 
-propFindDir :: Context -> Maybe PropertySet -> Depth -> NFS.FileHandle -> NFS.Verifier4 -> NFS.Nfs_cookie4 -> C.Source IO Response
-propFindDir ctx pset depth dh verf cook = do
+propFindDir :: Maybe PropertySet -> Depth -> Context -> NFS.Verifier4 -> NFS.Nfs_cookie4 -> C.Source IO Response
+propFindDir pset depth ctx verf cook = do
   NFS.READDIR4resok verf' (NFS.Dirlist4 dl eof) <- lift $ handle
     (\(_ :: DAVError) -> return $ NFS.READDIR4resok verf (NFS.Dirlist4 Nothing False))
-    $ nfsCall ctx $ NFS.op (NFS.PUTFH4args dh)
-      *> (NFS.rEADDIR4res'resok4 <$> NFS.op (NFS.READDIR4args cook verf (count `div` 4) count
-        (NFS.encodeBitmap $ fileInfoBitmap .|. NFS.packBitmap [NFS.AttrTypeRdattrError])))
-  cook' <- mapM (propFindDirlist ctx pset depth) dl
-  mapM_ (propFindDir ctx pset depth dh verf') $ guard (not eof) >> cook'
+    $ nfsFileCall ctx
+      $ NFS.rEADDIR4res'resok4 <$> NFS.op (NFS.READDIR4args cook verf (count `div` 4) count
+        (NFS.encodeBitmap $ fileInfoBitmap .|. NFS.packBitmap [NFS.AttrTypeRdattrError]))
+  cook' <- mapM (propFindDirlist pset depth ctx) dl
+  mapM_ (propFindDir pset depth ctx verf') $ guard (not eof) >> cook'
   where
   count = nfsBlockSize $ contextNFS ctx
 
-propFindEntry :: Context -> Maybe PropertySet -> Depth -> FileInfo -> C.Source IO Response
-propFindEntry ctx pset depth fi = do
-  C.yieldM $ propFindFile ctx pset fi
-  when (depth > Depth0 && fileType fi == Just NFS.NF4DIR)
-    $ propFindDir ctx pset (predDepth depth) (fileHandle fi) (constLengthArray 0) 0
+propFindEntry :: Maybe PropertySet -> Depth -> Context -> C.Source IO Response
+propFindEntry pset depth ctx = do
+  C.yieldM $ propFindFile pset ctx
+  when (depth > Depth0 && fileType (contextFile ctx) == Just NFS.NF4DIR)
+    $ propFindDir pset (predDepth depth) ctx (constLengthArray 0) 0
 
 httpPROPFIND :: Context -> IO Wai.Response
-httpPROPFIND ctx = do
+httpPROPFIND ctx@Context{ contextFile = fi } = do
   -- when (depth == DepthInfinity) $ result $ errorResponse PropfindFiniteDepth
   req <- propFindSet . fromMaybe (PropFind True []) <$> requestXML ctx
-  fi <- nfsCall ctx $ getFileInfo $ contextPath ctx
   checkFileInfo NFS.aCCESS4_READ fi
-  return $ xmlStreamResponse multiStatus207 [] $ streamMultiStatus (propFindEntry ctx req depth fi) Nothing
+  return $ xmlStreamResponse multiStatus207 [] $ streamMultiStatus (propFindEntry req depth ctx) Nothing
   where
   depth = fromMaybe DepthInfinity $ requestDepth ctx
