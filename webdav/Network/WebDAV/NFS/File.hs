@@ -1,16 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE RecordWildCards #-}
 module Network.WebDAV.NFS.File
   ( parsePath
-  , checkAccess
   , FileInfo(..)
+  , fileInfoBitmap
+  , decodeFileInfo
   , getFileInfo
+  , checkFileInfo
   ) where
 
-import           Control.Monad (unless)
+import           Control.Monad (guard, when, unless)
 import           Data.Bits ((.&.), (.|.))
 import qualified Data.ByteString.Builder as BSB
 import           Data.List (foldl')
+import           Data.Maybe (isNothing)
 import qualified Data.Text as T
 import           Data.Time.Clock (UTCTime)
 import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
@@ -24,65 +27,74 @@ import           Network.WebDAV.NFS.Types
 import           Network.WebDAV.NFS.Response
 
 parsePath :: NFSRoot -> [T.Text] -> Maybe [NFS.FileName]
-parsePath _ ("":_) = Nothing
-parsePath _ (".":_) = Nothing
-parsePath _ ("..":_) = Nothing
-parsePath NFSRoot{ nfsDotFiles = False } ((T.head -> '.'):_) = Nothing
-parsePath r (f:l) = (NFS.StrCS f :) <$> parsePath r l
-parsePath _ [] = Just []
+parsePath nfs (f:l) = guard (validFileName nfs f) >> (NFS.StrCS f :) <$> parsePath nfs l
+parsePath _ [] = return []
 
 data FileInfo = FileInfo
   { fileHandle :: NFS.FileHandle
   , fileAccess :: NFS.Uint32_t
-  , fileType :: NFS.Nfs_ftype4
+  , fileType :: Maybe NFS.Nfs_ftype4
   , fileETag :: ETag
   , fileSize :: Word64
   , fileCTime :: Maybe UTCTime
   , fileMTime :: UTCTime
+  , fileStatus :: NFS.Nfsstat4
   }
 
 emptyFileInfo :: FileInfo
 emptyFileInfo = FileInfo
   { fileHandle = emptyBoundedLengthArray
   , fileAccess = 0
-  , fileType = NFS.NF4REG
+  , fileType = Nothing
   , fileETag = WeakETag ""
   , fileSize = 0
   , fileCTime = Nothing
   , fileMTime = posixSecondsToUTCTime 0
+  , fileStatus = NFS.NFS4_OK
   }
 
 updateFileAttr :: FileInfo -> NFS.AttrVal -> FileInfo
-updateFileAttr f (NFS.AttrValType       x) = f{ fileType = x }
-updateFileAttr f (NFS.AttrValChange     x) = f{ fileETag = StrongETag $ buildBS $ BSB.word64Hex x }
-updateFileAttr f (NFS.AttrValSize       x) = f{ fileSize = x }
-updateFileAttr f (NFS.AttrValTimeCreate x) = f{ fileCTime = Just $ posixSecondsToUTCTime $ NFS.decodeTime x }
-updateFileAttr f (NFS.AttrValTimeModify x) = f{ fileMTime = posixSecondsToUTCTime $ NFS.decodeTime x }
+updateFileAttr f (NFS.AttrValType        x) = f{ fileType = Just x }
+updateFileAttr f (NFS.AttrValChange      x) = f{ fileETag = StrongETag $ buildBS $ BSB.word64Hex x }
+updateFileAttr f (NFS.AttrValSize        x) = f{ fileSize = x }
+updateFileAttr f (NFS.AttrValFilehandle  x) = f{ fileHandle = x }
+updateFileAttr f (NFS.AttrValTimeCreate  x) = f{ fileCTime = Just $ posixSecondsToUTCTime $ NFS.decodeTime x }
+updateFileAttr f (NFS.AttrValTimeModify  x) = f{ fileMTime = posixSecondsToUTCTime $ NFS.decodeTime x }
+updateFileAttr f (NFS.AttrValRdattrError x) = f{ fileStatus = x }
 updateFileAttr f _ = f
 
-getFileInfo :: NFS.FileReference -> NFS.Ops FileInfo
-getFileInfo fr = fi <$> (NFS.opFileReference fr
-  *> NFS.opGetFileHandle)
-  <*> (NFS.aCCESS4resok'access . NFS.aCCESS4res'resok4 <$> NFS.op
-    (NFS.ACCESS4args $ NFS.aCCESS4_READ .|. NFS.aCCESS4_LOOKUP .|. NFS.aCCESS4_MODIFY .|. NFS.aCCESS4_EXTEND .|. NFS.aCCESS4_DELETE))
-  <*> (NFS.decodeAttrs . NFS.gETATTR4resok'obj_attributes . NFS.gETATTR4res'resok4 <$> NFS.op (NFS.GETATTR4args $ NFS.enpackBitmap
-    [ NFS.AttrTypeType
-    , NFS.AttrTypeChange
-    , NFS.AttrTypeSize
-    , NFS.AttrTypeTimeCreate
-    , NFS.AttrTypeTimeModify
-    ]))
-  where
-  fi fh access (Right al@
-    ( NFS.AttrValType _
-    : NFS.AttrValChange _
-    : NFS.AttrValSize _
-    : _)) =
-    foldl' updateFileAttr emptyFileInfo
-      { fileHandle = fh
-      , fileAccess = access
-      } al
-  fi _ _ e = error $ "GETATTR: " ++ show e -- 500 error
+decodeFileInfo :: NFS.Fattr4 -> FileInfo
+decodeFileInfo = either
+  (error . ("FATTR: " ++)) -- 500 error
+  (foldl' updateFileAttr emptyFileInfo)
+  . NFS.decodeAttrs
 
-checkAccess :: NFS.Uint32_t -> FileInfo -> IO ()
-checkAccess a i = unless (a .&. fileAccess i == a) $ throwDAVError $ DAVStatus HTTP.forbidden403
+updateFileAccess :: NFS.Uint32_t -> FileInfo -> FileInfo
+updateFileAccess a i = i{ fileAccess = a }
+
+fileInfoBitmap :: NFS.Bitmap
+fileInfoBitmap = NFS.packBitmap
+  [ NFS.AttrTypeType
+  , NFS.AttrTypeChange
+  , NFS.AttrTypeSize
+  , NFS.AttrTypeFilehandle
+  , NFS.AttrTypeTimeCreate
+  , NFS.AttrTypeTimeModify
+  ]
+
+getFileInfo :: NFS.FileReference -> NFS.Ops FileInfo
+getFileInfo fr = NFS.opFileReference fr
+  *> (updateFileAccess . NFS.aCCESS4resok'access . NFS.aCCESS4res'resok4 <$> NFS.op
+    (NFS.ACCESS4args $ NFS.aCCESS4_READ .|. NFS.aCCESS4_LOOKUP .|. NFS.aCCESS4_MODIFY .|. NFS.aCCESS4_EXTEND .|. NFS.aCCESS4_DELETE))
+  <*> (decodeFileInfo . NFS.gETATTR4resok'obj_attributes . NFS.gETATTR4res'resok4 <$> NFS.op (NFS.GETATTR4args $ NFS.encodeBitmap fileInfoBitmap))
+
+checkFileInfo :: NFS.Uint32_t -> FileInfo -> IO ()
+checkFileInfo a i = do
+  checkNFSStatus $ fileStatus i
+  when
+    (  fileHandle i == fileHandle emptyFileInfo
+    || isNothing (fileType i)
+    || fileETag i == fileETag emptyFileInfo)
+    $ throwDAVError $ DAVStatus HTTP.internalServerError500
+  unless (a .&. fileAccess i == a)
+    $ throwDAVError $ DAVStatus HTTP.forbidden403

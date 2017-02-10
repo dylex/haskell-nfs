@@ -258,8 +258,8 @@ instance XML MultiStatus where
     X.>$<  (xmlConvert
       X.>*< X.optionalI xmlResponseDescription)
 
-streamMultiStatus :: MonadThrow m => Maybe ResponseDescription -> C.Source m Response -> C.Source m XT.Event
-streamMultiStatus d rs = XR.tag (davName "multistatus") mempty $ do
+streamMultiStatus :: MonadThrow m => C.Source m Response -> Maybe ResponseDescription -> C.Source m XT.Event
+streamMultiStatus rs d = XR.tag (davName "multistatus") mempty $ do
   rs C..| C.awaitForever (C.toProducer . X.streamerRender xmlConvert)
   mapM_ (X.streamerRender xmlResponseDescription) d
 

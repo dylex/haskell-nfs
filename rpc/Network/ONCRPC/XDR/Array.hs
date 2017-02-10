@@ -22,6 +22,7 @@ module Network.ONCRPC.XDR.Array
   , boundLengthArray
   , boundLengthArrayFromList
   , padLengthArray
+  , constLengthArray
   , emptyFixedLengthArray
   , emptyBoundedLengthArray
   , expandBoundedLengthArray
@@ -174,6 +175,11 @@ padLengthArray a p = l where
     GT -> take n a
   n = fixedLengthArrayLength l
   l = LengthArray a'
+
+-- |Create a 'FixedLengthArray' filled with the same value.
+constLengthArray :: (KnownNat n, Array a) => Elem a -> LengthArray 'EQ n a
+constLengthArray p = l where
+  l = LengthArray $ replicate (fixedLengthArrayLength l) p
 
 instance (KnownOrdering o, KnownNat n, IsString a, HasLength a) => IsString (LengthArray o n a) where
   fromString s = fromMaybe

@@ -41,8 +41,8 @@ httpGET ctx = do
   fi@FileInfo{..} <-
     nfsCall ctx
       $ getFileInfo $ contextPath ctx
-  checkAccess NFS.aCCESS4_READ fi
-  when (fileType /= NFS.NF4REG) $
+  checkFileInfo NFS.aCCESS4_READ fi
+  when (fileType /= Just NFS.NF4REG) $
     result $ statusResponse HTTP.methodNotAllowed405
   let headers =
         [ (HTTP.hETag, renderETag fileETag)

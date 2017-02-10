@@ -2,8 +2,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 -- {-# OPTIONS_GHC -ddump-splices #-}
 module Network.NFS.V4.Attr
-  ( encodeBitmap
+  ( Bitmap
+  , encodeBitmap
   , decodeBitmap
+  , packBitmap
+  , unpackBitmap
   , enpackBitmap
   , depackBitmap
   , AttrType(..)

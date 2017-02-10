@@ -38,5 +38,5 @@ fileInfoProperty CreationDate{} = fmap (CreationDate . return) . fileCTime
 fileInfoProperty GetContentLength{} = GetContentLength $. fileSize
 fileInfoProperty GetETag{} = GetETag $. fileETag
 fileInfoProperty GetLastModified{} = GetLastModified $. fileMTime
-fileInfoProperty ResourceType{} = ResourceType $. (, []) . (==) NFS.NF4DIR . fileType
+fileInfoProperty ResourceType{} = ResourceType $. (, []) . (Just NFS.NF4DIR ==) . fileType
 fileInfoProperty _ = const Nothing

@@ -4,6 +4,7 @@ module Network.WebDAV.NFS.Response
   , emptyResponse
   , statusResponse
   , exceptionResponse
+  , xmlStreamResponse
   , xmlResponse
   , errorResponse
   , DAVError(..)
@@ -11,12 +12,14 @@ module Network.WebDAV.NFS.Response
   , davErrorElements
   , throwDAVError
   , handleDAVError
+  , checkNFSStatus
   , handleNFSException
   ) where
 
 import           Control.Exception (Exception, displayException, throwIO, handle)
 import qualified Data.ByteString.Lazy.Char8 as BSLC
 import qualified Data.Conduit as C
+import           Data.Maybe (fromMaybe)
 import           Data.Typeable (Typeable)
 import qualified Network.HTTP.Types as HTTP
 import qualified Network.NFS.V4 as NFS
@@ -37,9 +40,12 @@ emptyResponse s h = Wai.responseLBS s h mempty
 statusResponse :: HTTP.Status -> Wai.Response
 statusResponse s = emptyResponse s []
 
+xmlStreamResponse :: HTTP.Status -> HTTP.ResponseHeaders -> XMLSource IO -> Wai.Response
+xmlStreamResponse s h x = WaiC.responseSource s ((HTTP.hContentType, "application/xml; charset=\"utf-8\"") : h)
+  $ C.mapOutput C.Chunk $ x C..| xmlRender
+
 xmlResponse :: XML a => HTTP.Status -> HTTP.ResponseHeaders -> a -> Wai.Response
-xmlResponse s h x = WaiC.responseSource s ((HTTP.hContentType, "application/xml; charset=\"utf-8\"") : h)
-  $ C.mapOutput C.Chunk $ xmlRender x
+xmlResponse s h = xmlStreamResponse s h . xmlSource
 
 errorResponse :: ErrorElement -> Wai.Response
 errorResponse e = xmlResponse (errorElementStatus e) [] e
@@ -82,5 +88,12 @@ nfsErrorStatus NFS.NFS4ERR_NOSPC = insufficientStorage507
 nfsErrorStatus NFS.NFS4ERR_DQUOT = insufficientStorage507
 nfsErrorStatus _ = HTTP.internalServerError500
 
+throwNFSStatus :: NFS.Nfsstat4 -> IO a
+throwNFSStatus e = throwDAVError $ DAVStatus $ nfsErrorStatus e
+
+checkNFSStatus :: NFS.Nfsstat4 -> IO ()
+checkNFSStatus NFS.NFS4_OK = return ()
+checkNFSStatus e = throwNFSStatus e
+
 handleNFSException :: IO a -> IO a
-handleNFSException = handle $ throwDAVError . DAVStatus . maybe HTTP.internalServerError500 nfsErrorStatus . NFS.nfsExceptionStatus
+handleNFSException = handle $ throwNFSStatus . fromMaybe NFS.NFS4ERR_BADXDR . NFS.nfsExceptionStatus
