@@ -1,9 +1,10 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Network.WebDAV.NFS.PROPFIND
   ( httpPROPFIND
   ) where
 
-import           Control.Exception (try)
+import           Control.Exception (try, handle)
 import           Control.Monad (guard, when)
 import           Control.Monad.Trans.Class (lift)
 import           Data.Bits ((.|.))
@@ -57,9 +58,11 @@ propFindDirlist ctx pset depth (NFS.Entry4 cook name attrs next) = do
 
 propFindDir :: Context -> Maybe PropertySet -> Depth -> NFS.FileHandle -> NFS.Verifier4 -> NFS.Nfs_cookie4 -> C.Source IO Response
 propFindDir ctx pset depth dh verf cook = do
-  NFS.READDIR4resok verf' (NFS.Dirlist4 dl eof) <- lift $ nfsCall ctx $ NFS.op (NFS.PUTFH4args dh)
-    *> (NFS.rEADDIR4res'resok4 <$> NFS.op (NFS.READDIR4args cook verf (count `div` 4) count
-      (NFS.encodeBitmap $ fileInfoBitmap .|. NFS.packBitmap [NFS.AttrTypeRdattrError])))
+  NFS.READDIR4resok verf' (NFS.Dirlist4 dl eof) <- lift $ handle
+    (\(_ :: DAVError) -> return $ NFS.READDIR4resok verf (NFS.Dirlist4 Nothing False))
+    $ nfsCall ctx $ NFS.op (NFS.PUTFH4args dh)
+      *> (NFS.rEADDIR4res'resok4 <$> NFS.op (NFS.READDIR4args cook verf (count `div` 4) count
+        (NFS.encodeBitmap $ fileInfoBitmap .|. NFS.packBitmap [NFS.AttrTypeRdattrError])))
   cook' <- mapM (propFindDirlist ctx pset depth) dl
   mapM_ (propFindDir ctx pset depth dh verf') $ guard (not eof) >> cook'
   where
@@ -73,10 +76,10 @@ propFindEntry ctx pset depth fi = do
 
 httpPROPFIND :: Context -> IO Wai.Response
 httpPROPFIND ctx = do
-  when (depth == DepthInfinity) $ result $ errorResponse PropfindFiniteDepth
+  -- when (depth == DepthInfinity) $ result $ errorResponse PropfindFiniteDepth
   req <- propFindSet . fromMaybe (PropFind True []) <$> requestXML ctx
   fi <- nfsCall ctx $ getFileInfo $ contextPath ctx
   checkFileInfo NFS.aCCESS4_READ fi
   return $ xmlStreamResponse multiStatus207 [] $ streamMultiStatus (propFindEntry ctx req depth fi) Nothing
   where
-  depth = fromMaybe Depth1 {- FIXME: Infinity -} $ requestDepth ctx
+  depth = fromMaybe DepthInfinity $ requestDepth ctx

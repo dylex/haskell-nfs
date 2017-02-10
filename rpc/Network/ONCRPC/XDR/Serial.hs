@@ -32,7 +32,6 @@ import           Data.Proxy (Proxy(..))
 import qualified Data.Serialize as S
 import qualified Data.Vector as V
 import qualified Network.ONCRPC.XDR.Types as XDR
--- import qualified Network.ONCRPC.XDR.Specification as XDR
 import           GHC.TypeLits (KnownNat, natVal)
 
 import           Network.ONCRPC.XDR.Array

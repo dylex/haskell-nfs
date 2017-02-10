@@ -27,6 +27,7 @@ import           Network.WebDAV.NFS.Types
 import           Network.WebDAV.NFS.Response
 
 parsePath :: NFSRoot -> [T.Text] -> Maybe [NFS.FileName]
+parsePath nfs ("":l) = parsePath nfs l
 parsePath nfs (f:l) = guard (validFileName nfs f) >> (NFS.StrCS f :) <$> parsePath nfs l
 parsePath _ [] = return []
 
