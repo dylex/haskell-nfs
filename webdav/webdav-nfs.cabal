@@ -26,12 +26,14 @@ library
     Network.WebDAV.NFS.Request
     Network.WebDAV.NFS.Response
     Network.WebDAV.NFS.File
+    Network.WebDAV.NFS.If
     Network.WebDAV.NFS.Property
     Network.WebDAV.NFS.GET
     Network.WebDAV.NFS.PROPFIND
   default-language: Haskell2010
   ghc-options: -Wall
   build-depends:       
+    attoparsec,
     base >=4.8 && <5,
     bytestring,
     conduit,

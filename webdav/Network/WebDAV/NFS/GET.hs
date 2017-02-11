@@ -5,7 +5,7 @@ module Network.WebDAV.NFS.GET
   ) where
 
 import           Control.Applicative ((<|>))
-import           Control.Monad (when, unless, guard)
+import           Control.Monad (when, guard)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import           Data.Maybe (mapMaybe)
@@ -15,12 +15,13 @@ import qualified Network.HTTP.Types as HTTP
 import qualified Network.HTTP.Types.Header as HTTP
 import qualified Network.NFS.V4 as NFS
 import qualified Network.Wai as Wai
-import           Waimwork.HTTP (parseHTTPDate, formatHTTPDate, parseETag, parseETags, renderETag, matchETag)
+import           Waimwork.HTTP (parseHTTPDate, formatHTTPDate, parseETag, renderETag)
 
 import           Network.WebDAV.NFS.Types
 import           Network.WebDAV.NFS.Request
 import           Network.WebDAV.NFS.Response
 import           Network.WebDAV.NFS.File
+import           Network.WebDAV.NFS.If
 
 streamFile :: Context -> NFS.FileHandle -> Word64 -> Word64 -> Wai.StreamingBody
 streamFile ctx fh start end send done = do
@@ -46,17 +47,10 @@ httpGET ctx@Context{ contextFile = FileInfo{..} } = do
         , (HTTP.hLastModified, formatHTTPDate fileMTime)
         , (HTTP.hAcceptRanges, "bytes")
         ]
-      ismat   = all (matchETag fileETag) ifmat
-      isnomat = all (not . matchETag fileETag) ifnomat
-      ismod   = all (fileMTime >) ifmod
-      isnomod = all (fileMTime <=) ifnomod
       isrange = all (either (fileETag ==) (fileMTime <=)) ifrange
       ranges' = guard isrange >> mapMaybe (checkr . clampr (toInteger fileSize)) <$> ranges
       sizeb = BSB.word64Dec fileSize
-  unless (isnomat || ismod) $
-    result $ emptyResponse HTTP.notModified304 headers
-  unless (ismat || isnomod) $
-    result $ emptyResponse HTTP.preconditionFailed412 headers
+  mapM_ (\s -> result $ emptyResponse s headers) $ checkIfHeaders ctx
   return $ case ranges' of
     Nothing -> Wai.responseStream HTTP.ok200
       ((HTTP.hContentLength, buildBS sizeb) : headers)
@@ -70,10 +64,6 @@ httpGET ctx@Context{ contextFile = FileInfo{..} } = do
       (streamFile ctx fileHandle a $ succ b)
     Just _ -> statusResponse HTTP.notImplemented501 -- "multipart/byteranges"
   where
-  ifmat   = parseETags    <$> header HTTP.hIfMatch
-  ifnomat = parseETags    <$> header HTTP.hIfNoneMatch
-  ifmod   = parseHTTPDate =<< header HTTP.hIfModifiedSince
-  ifnomod = parseHTTPDate =<< header HTTP.hIfUnmodifiedSince
   ifrange = (\s -> Right <$> parseHTTPDate s <|> Left <$> either (const Nothing) Just (parseETag s)) =<< header HTTP.hIfRange
   ranges  = HTTP.parseByteRanges =<< header HTTP.hRange
   header = requestHeader ctx
