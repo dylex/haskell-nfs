@@ -2,43 +2,53 @@
 {-# LANGUAGE RecordWildCards #-}
 module Network.WebDAV.NFS.File
   ( parsePath
+  , fileHRef
   , nfsFileCall
   , fileInfoBitmap
   , decodeFileInfo
   , getFileInfo
   , checkFileInfo
-  , methodNotAllowedResponse
+  , throwMethodNotAllowed
   ) where
 
 import           Control.Monad (guard, when, unless)
 import           Data.Bits ((.&.), (.|.))
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
+import qualified Data.ByteString.Lazy.Char8 as BSLC
 import           Data.List (foldl')
 import           Data.Maybe (isNothing)
 import qualified Data.Text as T
 import           Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import qualified Network.HTTP.Types as HTTP
 import           Network.ONCRPC.XDR.Array (emptyBoundedLengthArray)
+import           Network.URI (nullURI, uriPath)
 import qualified Network.NFS.V4 as NFS
-import qualified Network.Wai as Wai
-import           Waimwork.HTTP (ETag(..))
+import           Waimwork.HTTP (encodePathSegments', ETag(..))
 
+import           Network.WebDAV.DAV (HRef)
 import           Network.WebDAV.NFS.Types
 import           Network.WebDAV.NFS.Response
 
-parsePath :: NFSRoot -> [T.Text] -> Maybe [NFS.FileName]
+parsePath :: WebDAVNFS -> [T.Text] -> Maybe [NFS.FileName]
 parsePath nfs ("":l) = parsePath nfs l
-parsePath nfs (f:l) = guard (validFileName nfs f) >> (NFS.StrCS f :) <$> parsePath nfs l
+parsePath nfs (f:l) = guard (validFileName nfs n) >> (n :) <$> parsePath nfs l where n = NFS.StrCS f
 parsePath _ [] = return []
 
+fileHRef :: Context -> HRef
+fileHRef ctx = nullURI
+  { uriPath = BSLC.unpack $ BSB.toLazyByteString $ encodePathSegments'
+    $ webDAVRoot (context ctx) ++ map NFS.strCSText (filePath $ contextFile ctx)
+  }
+
 nfsFileCall :: Context -> NFS.Ops a -> IO a
-nfsFileCall ctx ops = nfsCall (contextNFS ctx)
+nfsFileCall ctx ops = nfsCall (context ctx)
   $ NFS.op (NFS.PUTFH4args (fileHandle (contextFile ctx))) *> ops
 
 emptyFileInfo :: FileInfo
 emptyFileInfo = FileInfo
-  { fileHandle = emptyBoundedLengthArray
+  { filePath = []
+  , fileHandle = emptyBoundedLengthArray
   , fileAccess = 0
   , fileType = Nothing
   , fileETag = WeakETag ""
@@ -58,11 +68,17 @@ updateFileAttr f (NFS.AttrValTimeModify  x) = f{ fileMTime = posixSecondsToUTCTi
 updateFileAttr f (NFS.AttrValRdattrError x) = f{ fileStatus = x }
 updateFileAttr f _ = f
 
-decodeFileInfo :: NFS.Fattr4 -> FileInfo
-decodeFileInfo = either
+decodeFileInfo :: NFS.Fattr4 -> Either String FileInfo
+decodeFileInfo a = foldl' updateFileAttr emptyFileInfo <$> NFS.decodeAttrs a
+
+decodeFileInfo' :: NFS.Fattr4 -> FileInfo
+decodeFileInfo' = either
   (error . ("FATTR: " ++)) -- 500 error
   (foldl' updateFileAttr emptyFileInfo)
   . NFS.decodeAttrs
+
+updateFilePath :: [NFS.FileName] -> FileInfo -> FileInfo
+updateFilePath p i = i{ filePath = p }
 
 updateFileAccess :: NFS.Uint32_t -> FileInfo -> FileInfo
 updateFileAccess a i = i{ fileAccess = a }
@@ -77,11 +93,18 @@ fileInfoBitmap = NFS.packBitmap
   , NFS.AttrTypeTimeModify
   ]
 
-getFileInfo :: NFS.FileReference -> NFS.Ops FileInfo
-getFileInfo fr = NFS.opFileReference fr
-  *> (updateFileAccess . NFS.aCCESS4resok'access . NFS.aCCESS4res'resok4 <$> NFS.op
-    (NFS.ACCESS4args $ NFS.aCCESS4_READ .|. NFS.aCCESS4_LOOKUP .|. NFS.aCCESS4_MODIFY .|. NFS.aCCESS4_EXTEND .|. NFS.aCCESS4_DELETE))
-  <*> (decodeFileInfo . NFS.gETATTR4resok'obj_attributes . NFS.gETATTR4res'resok4 <$> NFS.op (NFS.GETATTR4args $ NFS.encodeBitmap fileInfoBitmap))
+getFileInfo :: WebDAVNFS -> [NFS.FileName] -> IO FileInfo
+getFileInfo nfs path = nfsCall nfs $
+  ((updateFilePath path .) <$ NFS.opFileReference (NFS.relativeFileReference (nfsRoot nfs) path))
+  <*> (updateFileAccess . NFS.aCCESS4resok'access . NFS.aCCESS4res'resok4
+    <$> NFS.op (NFS.ACCESS4args
+      $   NFS.aCCESS4_READ
+      .|. NFS.aCCESS4_LOOKUP
+      .|. NFS.aCCESS4_MODIFY
+      .|. NFS.aCCESS4_EXTEND
+      .|. NFS.aCCESS4_DELETE))
+  <*> (decodeFileInfo' . NFS.gETATTR4resok'obj_attributes . NFS.gETATTR4res'resok4
+    <$> NFS.op (NFS.GETATTR4args $ NFS.encodeBitmap fileInfoBitmap))
 
 checkFileInfo :: NFS.Uint32_t -> FileInfo -> IO ()
 checkFileInfo a i = do
@@ -90,16 +113,15 @@ checkFileInfo a i = do
     (  fileHandle i == fileHandle emptyFileInfo
     || isNothing (fileType i)
     || fileETag i == fileETag emptyFileInfo)
-    $ throwDAVError $ DAVStatus HTTP.internalServerError500
+    $ throwHTTP HTTP.internalServerError500
   unless (a .&. fileAccess i == a)
-    $ throwDAVError $ DAVStatus HTTP.forbidden403
+    $ throwHTTP HTTP.forbidden403
 
 fileAcceptMethods :: FileInfo -> [HTTP.Method]
 fileAcceptMethods i = ["OPTIONS", "PROPFIND"] ++ case fileType i of
   Just NFS.NF4REG -> ["GET", "HEAD"]
   _ -> []
 
-methodNotAllowedResponse :: FileInfo -> Wai.Response
-methodNotAllowedResponse i = emptyResponse HTTP.methodNotAllowed405
-  [ (HTTP.hAccept, BS.intercalate "," $ fileAcceptMethods i)
-  ]
+throwMethodNotAllowed :: Context -> IO a
+throwMethodNotAllowed ctx = throwDAV $ HTTPError HTTP.methodNotAllowed405
+  [ (HTTP.hAccept, BS.intercalate "," $ fileAcceptMethods $ contextFile ctx) ]

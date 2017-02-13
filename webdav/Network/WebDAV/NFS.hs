@@ -1,13 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Network.WebDAV.NFS
-  ( NFSRoot(..)
+  ( WebDAVNFS(..)
   , webDAVNFS
   ) where
 
+import           Data.List (stripPrefix)
 import qualified Network.HTTP.Types as HTTP
-import qualified Network.NFS.V4 as NFS
 import qualified Network.Wai as Wai
-import           Waimwork.Result (resultApplication)
 
 import           Network.WebDAV.NFS.Types
 import           Network.WebDAV.NFS.Response
@@ -15,18 +14,19 @@ import           Network.WebDAV.NFS.File
 import           Network.WebDAV.NFS.GET
 import           Network.WebDAV.NFS.PROPFIND
 
-webDAVNFS :: NFSRoot -> Wai.Application
-webDAVNFS nfs = resultApplication $ \req -> handleDAVError $ do
-  ctx <- Context nfs req <$> maybe
-    (result $ statusResponse HTTP.notFound404)
-    (nfsCall nfs . getFileInfo . NFS.relativeFileReference (nfsRoot nfs))
-    (parsePath nfs $ Wai.pathInfo req)
+webDAVNFS :: WebDAVNFS -> Wai.Application
+webDAVNFS nfs req = (>>=) $ handleDAV $ do
+  path <- maybe 
+    (throwHTTP HTTP.notFound404)
+    return $ parsePath nfs =<< stripPrefix (webDAVRoot nfs) (Wai.pathInfo req)
+  info <- getFileInfo nfs path
+  let ctx = Context nfs req info
   Wai.mapResponseHeaders (("DAV", "1") :) <$>
     case Wai.requestMethod req of
-      "OPTIONS" -> return $ statusResponse HTTP.ok200
+      "OPTIONS" -> return $ emptyResponse HTTP.ok200 []
       "GET" -> httpGET ctx
       "HEAD" -> do
         r <- httpGET ctx
         return $ emptyResponse (Wai.responseStatus r) (Wai.responseHeaders r)
       "PROPFIND" -> httpPROPFIND ctx
-      _ -> return $ methodNotAllowedResponse $ contextFile ctx
+      _ -> throwMethodNotAllowed ctx

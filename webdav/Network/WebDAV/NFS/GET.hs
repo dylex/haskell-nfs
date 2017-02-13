@@ -25,7 +25,7 @@ import           Network.WebDAV.NFS.If
 
 streamFile :: Context -> NFS.FileHandle -> Word64 -> Word64 -> Wai.StreamingBody
 streamFile ctx fh start end send done = do
-  NFS.READ4res'NFS4_OK (NFS.READ4resok eof lbuf) <- NFS.nfsCall (nfsClient $ contextNFS ctx)
+  NFS.READ4res'NFS4_OK (NFS.READ4resok eof lbuf) <- NFS.nfsCall (nfsClient $ context ctx)
     $ NFS.op (NFS.PUTFH4args fh) *> NFS.op (NFS.READ4args NFS.anonymousStateid start $ fromIntegral l)
   let buf = NFS.unLengthArray lbuf
   send $ BSB.byteString buf
@@ -35,13 +35,13 @@ streamFile ctx fh start end send done = do
     else streamFile ctx fh next end send done
   where
   r = end - start
-  l = r `min` fromIntegral (nfsBlockSize $ contextNFS ctx)
+  l = r `min` fromIntegral (nfsBlockSize $ context ctx)
 
 httpGET :: Context -> IO Wai.Response
 httpGET ctx@Context{ contextFile = FileInfo{..} } = do
   checkFileInfo NFS.aCCESS4_READ $ contextFile ctx
   when (fileType /= Just NFS.NF4REG) $
-    result $ methodNotAllowedResponse $ contextFile ctx
+    throwMethodNotAllowed ctx
   let headers =
         [ (HTTP.hETag, renderETag fileETag)
         , (HTTP.hLastModified, formatHTTPDate fileMTime)
@@ -50,7 +50,7 @@ httpGET ctx@Context{ contextFile = FileInfo{..} } = do
       isrange = all (either (fileETag ==) (fileMTime <=)) ifrange
       ranges' = guard isrange >> mapMaybe (checkr . clampr (toInteger fileSize)) <$> ranges
       sizeb = BSB.word64Dec fileSize
-  mapM_ (\s -> result $ emptyResponse s headers) $ checkIfHeaders ctx
+  mapM_ (\s -> throwDAV $ HTTPError s headers) $ checkIfHeaders ctx
   return $ case ranges' of
     Nothing -> Wai.responseStream HTTP.ok200
       ((HTTP.hContentLength, buildBS sizeb) : headers)
@@ -62,10 +62,10 @@ httpGET ctx@Context{ contextFile = FileInfo{..} } = do
       : (HTTP.hContentRange, buildBS $ "bytes " <> BSB.word64Dec a <> BSB.char8 '-' <> BSB.word64Dec b <> BSB.char8 '/' <> sizeb)
       : headers)
       (streamFile ctx fileHandle a $ succ b)
-    Just _ -> statusResponse HTTP.notImplemented501 -- "multipart/byteranges"
+    Just _ -> emptyResponse HTTP.notImplemented501 [] -- "multipart/byteranges"
   where
   ifrange = (\s -> Right <$> parseHTTPDate s <|> Left <$> either (const Nothing) Just (parseETag s)) =<< header HTTP.hIfRange
-  ranges  = HTTP.parseByteRanges =<< header HTTP.hRange
+  ranges = HTTP.parseByteRanges =<< Wai.requestHeaderRange (contextRequest ctx)
   header = requestHeader ctx
   clampr z (HTTP.ByteRangeFrom a) = (a `max` 0, pred z)
   clampr z (HTTP.ByteRangeFromTo a b) = (a `max` 0, b `min` pred z)

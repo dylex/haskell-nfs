@@ -26,6 +26,7 @@ library
     Network.WebDAV.NFS.Request
     Network.WebDAV.NFS.Response
     Network.WebDAV.NFS.File
+    Network.WebDAV.NFS.Dir
     Network.WebDAV.NFS.If
     Network.WebDAV.NFS.Property
     Network.WebDAV.NFS.GET

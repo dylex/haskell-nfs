@@ -1,16 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
 module Network.WebDAV.NFS.Types
-  ( NFSRoot(..)
+  ( WebDAVNFS(..)
   , FileInfo(..)
   , Context(..)
   , validFileName
-  , subContext
   , buildBS
   , nfsCall
   ) where
 
-import           Control.Monad (guard)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Lazy as BSL
@@ -23,16 +21,18 @@ import           Waimwork.HTTP (ETag)
 
 import           Network.WebDAV.NFS.Response
 
-data NFSRoot = NFSRoot
-  { nfsClient :: NFS.Client
-  , nfsRoot :: NFS.FileReference
-  , nfsReadOnly :: !Bool
-  , nfsDotFiles :: !Bool
-  , nfsBlockSize :: !Word32
+data WebDAVNFS = WebDAVNFS
+  { webDAVRoot :: [T.Text] -- ^HTTP prefix for serving WebDAV requests
+  , nfsClient :: NFS.Client -- ^NFS client connection to use
+  , nfsRoot :: NFS.FileReference -- ^NFS directory to which 'webDAVRoot' maps
+  , webDAVReadOnly :: !Bool -- ^Disallow modifying access
+  , webDAVDotFiles :: !Bool -- ^Allow access to hidden dot-files
+  , nfsBlockSize :: !Word32 -- ^Maximum block size for read, write, readdir, etc. NFS requests 
   }
 
 data FileInfo = FileInfo
-  { fileHandle :: NFS.FileHandle
+  { filePath :: [NFS.FileName] -- ^Relative to 'webDAVRoot' and 'nfsRoot'
+  , fileHandle :: NFS.FileHandle
   , fileAccess :: NFS.Uint32_t
   , fileType :: Maybe NFS.Nfs_ftype4
   , fileETag :: ETag
@@ -43,29 +43,20 @@ data FileInfo = FileInfo
   }
 
 data Context = Context
-  { contextNFS :: !NFSRoot
-  , contextRequest :: !Wai.Request
+  { context :: WebDAVNFS
+  , contextRequest :: Wai.Request
   , contextFile :: FileInfo
   }
 
-validFileName :: NFSRoot -> T.Text -> Bool
+validFileName :: WebDAVNFS -> NFS.FileName -> Bool
 validFileName _ "" = False
 validFileName _ "." = False
 validFileName _ ".." = False
-validFileName NFSRoot{ nfsDotFiles = False } (T.head -> '.') = False
+validFileName WebDAVNFS{ webDAVDotFiles = False } (T.head . NFS.strCSText -> '.') = False
 validFileName _ _ = True
-
-subContext :: Context -> FileInfo -> NFS.FileName -> Maybe Context
-subContext ctx info name = ctx
-  { contextRequest = (contextRequest ctx){ Wai.pathInfo = Wai.pathInfo (contextRequest ctx) ++ [tname] }
-  -- TODO: fix root: raw path info?
-  , contextFile = info
-  } <$ guard (validFileName (contextNFS ctx) tname)
-  where
-  tname = NFS.strCSText name
 
 buildBS :: BSB.Builder -> BS.ByteString
 buildBS = BSL.toStrict . BSB.toLazyByteString
 
-nfsCall :: NFSRoot -> NFS.Ops a -> IO a
-nfsCall nfs = handleNFSException . NFS.nfsCall (nfsClient nfs)
+nfsCall :: WebDAVNFS -> NFS.Ops a -> IO a
+nfsCall nfs = handleNFS . NFS.nfsCall (nfsClient nfs)
