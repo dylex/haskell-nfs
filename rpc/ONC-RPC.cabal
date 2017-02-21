@@ -44,6 +44,7 @@ library
     Network.ONCRPC.Message
     Network.ONCRPC.Client
     Network.ONCRPC
+    Network.ONCRPC.Bind.Prot
   other-modules:
     Network.Socket.All
     Network.ONCRPC.XDR.Specification
