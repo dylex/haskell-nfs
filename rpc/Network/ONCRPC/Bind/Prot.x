@@ -20,8 +20,8 @@ const RPCB_PORT = 111;
  * every system.
  */
 struct rpcb {
- unsigned long r_prog;    /* program number */
- unsigned long r_vers;    /* version number */
+ unsigned int r_prog;     /* program number */
+ unsigned int r_vers;     /* version number */
  string r_netid<>;        /* network id */
  string r_addr<>;         /* universal address */
  string r_owner<>;        /* owner of this service */
@@ -40,9 +40,9 @@ typedef rp__list *rpcblist_ptr;        /* results of RPCBPROC_DUMP */
  * Arguments of remote calls
  */
 struct rpcb_rmtcallargs {
- unsigned long prog;        /* program number */
- unsigned long vers;        /* version number */
- unsigned long proc;        /* procedure number */
+ unsigned int prog;         /* program number */
+ unsigned int vers;         /* version number */
+ unsigned int proc;         /* procedure number */
  opaque args<>;             /* argument */
 };
 
@@ -114,7 +114,7 @@ struct rpcb_rmtcallres {
 struct rpcb_entry {
  string          r_maddr<>;            /* merged address of service */
  string          r_nc_netid<>;         /* netid field */
- unsigned long   r_nc_semantics;       /* semantics of transport */
+ unsigned int    r_nc_semantics;       /* semantics of transport */
  string          r_nc_protofmly<>;     /* protocol family */
  string          r_nc_proto<>;         /* protocol name */
 };
@@ -133,9 +133,9 @@ typedef rpcb_entry_list *rpcb_entry_list_ptr;
  * rpcbind statistics
  */
 
-const rpcb_highproc_2 = RPCBPROC_CALLIT;
-const rpcb_highproc_3 = RPCBPROC_TADDR2UADDR;
-const rpcb_highproc_4 = RPCBPROC_GETSTAT;
+const rpcb_highproc_2 = 5;
+const rpcb_highproc_3 = 8;
+const rpcb_highproc_4 = 12;
 
 const RPCBSTAT_HIGHPROC = 13; /* # of procs in rpcbind V4 plus one */
 const RPCBVERS_STAT     = 3; /* provide only for rpcbind V2, V3 and V4 */
@@ -145,8 +145,8 @@ const RPCBVERS_2_STAT   = 0;
 
 /* Link list of all the stats about getport and getaddr */
 struct rpcbs_addrlist {
- unsigned long prog;
- unsigned long vers;
+ unsigned int prog;
+ unsigned int vers;
  int success;
  int failure;
  string netid<>;
@@ -155,9 +155,9 @@ struct rpcbs_addrlist {
 
 /* Link list of all the stats about rmtcall */
 struct rpcbs_rmtcalllist {
- unsigned long prog;
- unsigned long vers;
- unsigned long proc;
+ unsigned int prog;
+ unsigned int vers;
+ unsigned int proc;
  int success;
  int failure;
  int indirect;    /* whether callit or indirect */
@@ -193,6 +193,7 @@ struct netbuf {
  opaque buf<>;
 };
 
+typedef string rpc_string<>;
 
 /*
  * rpcbind procedures
@@ -205,7 +206,7 @@ program RPCBPROG {
      bool
      RPCBPROC_UNSET(rpcb) = 2;
 
-     string
+     rpc_string
      RPCBPROC_GETADDR(rpcb) = 3;
 
      rpcblist_ptr
@@ -218,9 +219,9 @@ program RPCBPROG {
      RPCBPROC_GETTIME(void) = 6;
 
      netbuf
-     RPCBPROC_UADDR2TADDR(string) = 7;
+     RPCBPROC_UADDR2TADDR(rpc_string) = 7;
 
-     string
+     rpc_string
      RPCBPROC_TADDR2UADDR(netbuf) = 8;
  } = 3;
 
@@ -232,7 +233,7 @@ program RPCBPROG {
      bool
      RPCBPROC_UNSET(rpcb) = 2;
 
-     string
+     rpc_string
      RPCBPROC_GETADDR(rpcb) = 3;
 
      rpcblist_ptr
@@ -245,19 +246,18 @@ program RPCBPROG {
       * RPCBPROC_INDIRECT should be used for indirect calls.
       */
      rpcb_rmtcallres
-     RPCBPROC_BCAST(rpcb_rmtcallargs) = RPCBPROC_CALLIT;
+     RPCBPROC_BCAST(rpcb_rmtcallargs) = 5;
 
      unsigned int
-
      RPCBPROC_GETTIME(void) = 6;
 
      netbuf
-     RPCBPROC_UADDR2TADDR(string) = 7;
+     RPCBPROC_UADDR2TADDR(rpc_string) = 7;
 
-     string
+     rpc_string
      RPCBPROC_TADDR2UADDR(netbuf) = 8;
 
-     string
+     rpc_string
      RPCBPROC_GETVERSADDR(rpcb) = 9;
 
      rpcb_rmtcallres
@@ -289,10 +289,11 @@ const IPPROTO_UDP = 17;     /* protocol number for UDP/IP */
 
 /* A list of mappings: */
 
-struct *pmaplist {
+struct pmap {
  mapping map;
  pmaplist next;
 };
+typedef pmap *pmaplist;
 
 /* Arguments to callit: */
 
