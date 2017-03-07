@@ -83,7 +83,7 @@ main = do
     optAuthUnix
   client <- NFS.setClientAuth auth RPC.AuthNone <$> NFS.openClient optServer
   root <- NFS.nfsCall client $ NFS.opFileReferenceGet $ NFS.absoluteFileReference $ map fromString $ splitDirectories optRoot
-  Warp.run optPort $ webDAVNFS WebDAVNFS
+  Warp.run optPort $ webDAVNFSApplication WebDAVNFS
     { nfsClient = client
     , nfsRoot = root
     , webDAVRoot = []

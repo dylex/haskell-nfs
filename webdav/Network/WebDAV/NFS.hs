@@ -2,6 +2,7 @@
 module Network.WebDAV.NFS
   ( WebDAVNFS(..)
   , webDAVNFS
+  , webDAVNFSApplication
   ) where
 
 import           Data.List (stripPrefix)
@@ -14,8 +15,8 @@ import           Network.WebDAV.NFS.File
 import           Network.WebDAV.NFS.GET
 import           Network.WebDAV.NFS.PROPFIND
 
-webDAVNFS :: WebDAVNFS -> Wai.Application
-webDAVNFS nfs req = (>>=) $ handleDAV $ do
+webDAVNFS :: WebDAVNFS -> Wai.Request -> IO Wai.Response
+webDAVNFS nfs req = handleDAV $ do
   path <- maybe 
     (throwHTTP HTTP.notFound404)
     return $ parsePath nfs =<< stripPrefix (webDAVRoot nfs) (Wai.pathInfo req)
@@ -30,3 +31,6 @@ webDAVNFS nfs req = (>>=) $ handleDAV $ do
         return $ emptyResponse (Wai.responseStatus r) (Wai.responseHeaders r)
       "PROPFIND" -> httpPROPFIND ctx
       _ -> throwMethodNotAllowed ctx
+
+webDAVNFSApplication :: WebDAVNFS -> Wai.Application
+webDAVNFSApplication nfs = (>>=) . webDAVNFS nfs
