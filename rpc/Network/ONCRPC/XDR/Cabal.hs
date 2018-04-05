@@ -1,4 +1,5 @@
 -- |Cabal utilities for XDR processing.
+{-# LANGUAGE CPP #-}
 module Network.ONCRPC.XDR.Cabal
   ( ppRPCGenSuffixHandler
   ) where
@@ -11,6 +12,9 @@ import           Distribution.Verbosity (Verbosity)
 import           Distribution.Simple.LocalBuildInfo (LocalBuildInfo)
 import           Distribution.Simple.PreProcess (PreProcessor(..), PPSuffixHandler)
 import           Distribution.Simple.Utils (info)
+#if MIN_VERSION_Cabal(2,0,0)
+import           Distribution.Types.ComponentLocalBuildInfo (ComponentLocalBuildInfo)
+#endif
 import           System.FilePath ((</>), dropExtension, splitDirectories)
 
 import           Network.ONCRPC.XDR.Generate
@@ -44,8 +48,16 @@ ppRPCGenCustomField :: (String, String) -> Maybe (String, String)
 ppRPCGenCustomField ('x':'-':'r':'p':'c':'g':'e':'n':'-':f,v) = Just (f,v)
 ppRPCGenCustomField _ = Nothing
 
-ppRPCGen :: BuildInfo -> LocalBuildInfo -> PreProcessor
-ppRPCGen bi _ = PreProcessor
+ppRPCGen :: BuildInfo -> LocalBuildInfo
+#if MIN_VERSION_Cabal(2,0,0)
+  -> ComponentLocalBuildInfo
+#endif
+  -> PreProcessor
+ppRPCGen bi _ 
+#if MIN_VERSION_Cabal(2,0,0)
+  _
+#endif
+  = PreProcessor
   { platformIndependent = True
   , runPreProcessor = runRPCGen $ mapMaybe ppRPCGenCustomField $ customFieldsBI bi
   }

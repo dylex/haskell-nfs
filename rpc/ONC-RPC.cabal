@@ -9,7 +9,7 @@ maintainer:          dylan@dylex.net
 copyright:           2017
 category:            Network
 build-type:          Custom
-cabal-version:       >=1.10
+cabal-version:       >=1.24
 tested-with:         GHC == 7.10.3, GHC == 8.0.1
 
 source-repository head

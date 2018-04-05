@@ -1,5 +1,6 @@
 -- |Generate Haskell code from XDR descriptions as per RFC4506 and RPC extensions from RFC5531
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.XDR.Generate
   ( generateFromFile
@@ -46,7 +47,11 @@ instDecl c t = HS.InstDecl () Nothing
 dataDecl :: String -> [HS.ConDecl ()] -> [String] -> HS.Decl ()
 dataDecl n con derive = HS.DataDecl () (HS.DataType ()) Nothing (HS.DHead () $ HS.name n)
   (map (HS.QualConDecl () Nothing Nothing) con)
-  (Just $ HS.Deriving () $ map (HS.IRule () Nothing Nothing . HS.IHCon () . ("Prelude"!)) derive)
+  (return $ HS.Deriving ()
+#if MIN_VERSION_haskell_src_exts(1,20,0)
+    Nothing
+#endif
+    $ map (HS.IRule () Nothing Nothing . HS.IHCon () . ("Prelude"!)) derive)
 
 constantType :: HS.Type ()
 constantType = HS.TyForall ()

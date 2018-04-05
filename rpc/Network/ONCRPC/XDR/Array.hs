@@ -43,12 +43,14 @@ import qualified Data.Vector as V
 import           Data.Word (Word8)
 import           GHC.TypeLits (Nat, KnownNat, natVal, type (+), type CmpNat)
 
+-- See also MonoFoldable
 class HasLength a where
   length :: a -> Int
   -- |Equivalent to @'compare' . 'length'@ but allows more efficient implementations
   compareLength :: a -> Int -> Ordering
   compareLength = compare . length
 
+-- See also IsSquence
 class (Monoid a, HasLength a) => Array a where
   type Elem a :: *
   take :: Int -> a -> a
