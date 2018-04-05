@@ -29,6 +29,9 @@ thAttr attrs = return
     (forAttrs $ \a -> TH.NormalC (ntype a) [])
     (
 #if MIN_VERSION_template_haskell(2,11,0)
+#if MIN_VERSION_template_haskell(2,12,0)
+      return $ TH.DerivClause Nothing $
+#endif
       map TH.ConT
 #endif
       [''Eq, ''Ord, ''Enum, ''Bounded, ''Show])
@@ -54,6 +57,9 @@ thAttr attrs = return
       , fval a)])
     (
 #if MIN_VERSION_template_haskell(2,11,0)
+#if MIN_VERSION_template_haskell(2,12,0)
+      return $ TH.DerivClause Nothing $
+#endif
       map TH.ConT
 #endif
       [''Eq, ''Show])
