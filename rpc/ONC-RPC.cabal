@@ -29,6 +29,10 @@ custom-setup
     parsec,
     vector
 
+flag bindresvport
+  Description: Enable bindresvport option on client connections
+  Default: False
+
 library
   exposed-modules:
     Network.ONCRPC.XDR.Array
@@ -72,6 +76,9 @@ library
   if !os(windows)
     build-depends:
       unix
+
+  if flag(bindresvport)
+    cpp-options: -DBINDRESVPORT
 
 executable hsrpcgen
   hs-source-dirs: tools

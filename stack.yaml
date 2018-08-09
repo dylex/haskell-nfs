@@ -1,6 +1,6 @@
-resolver: lts-11.3
+resolver: lts-12.5
 extra-deps:
-- web-inv-route-0.1.1
+- web-inv-route-0.1.2.1
 - invertible-hxt-0.1
 packages:
 - location: rpc
@@ -8,21 +8,19 @@ packages:
 - location: webdav
 - location:
     git: git://github.com/dylex/invertible
-    commit: master
+    commit: 0.2.0.5
   subdirs:
   - conduit
   extra-dep: true
 - location:
     git: git://github.com/dylex/waimwork
-    commit: master
+    commit: 8d9408d2bf864479becfed181c6c440ffbc2a128
   extra-dep: true
 flags:
   web-inv-route:
     snap: false
     happstack: false
+  ONC-RPC:
+    bindresvport: true
 explicit-setup-deps:
   nfs: true
-ghc-options:
-  ONC-RPC: -Wall -Werror
-  nfs: -Wall -Werror
-  webdav-nfs: -Wall -Werror

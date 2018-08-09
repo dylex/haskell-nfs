@@ -3,10 +3,12 @@
 -- Clients are fully thread-safe, allowing multiple outstanding requests, and automatically reconnect on error.
 -- Currently error messages are just written to stdout.
 
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RecordWildCards #-}
 module Network.ONCRPC.Client
   ( ClientServer(..)
+  , makeClientServerPort
   , Client
   , openClient
   , closeClient
@@ -26,6 +28,13 @@ import           System.IO (hPutStrLn, stderr)
 import           System.IO.Error (catchIOError)
 import           System.Random (randomIO)
 
+#ifdef BINDRESVPORT
+import           Control.Monad (when)
+import           Foreign.C.Types (CInt(CInt))
+import           Foreign.Ptr (Ptr, nullPtr)
+import           Network.Socket.Internal (throwSocketErrorIfMinus1Retry_)
+#endif
+
 import qualified Network.ONCRPC.XDR as XDR
 import qualified Network.ONCRPC.Prot as RPC
 import           Network.ONCRPC.Types
@@ -39,7 +48,19 @@ data ClientServer
   = ClientServerPort
     { clientServerHost :: Net.HostName -- ^Host name or IP address of server
     , clientServerPort :: Net.ServiceName -- ^Service name (not portmap) or port number
+#ifdef BINDRESVPORT
+    , clientBindResvPort :: Bool
+#endif
     } -- ^a known service by host/port, currently only TCP
+
+makeClientServerPort :: Net.HostName -> Net.ServiceName -> ClientServer
+makeClientServerPort h p = ClientServerPort
+  { clientServerHost = h
+  , clientServerPort = p
+#ifdef BINDRESVPORT
+  , clientBindResvPort = False
+#endif
+  }
 
 data Request = forall a . XDR.XDR a => Request
   { requestBody :: BSL.ByteString -- ^for retransmits
@@ -59,6 +80,10 @@ data Client = Client
   , clientState :: MVar State
   , clientCred, clientVerf :: Auth
   }
+
+#ifdef BINDRESVPORT
+foreign import ccall unsafe "bindresvport" c_bindresvport :: CInt -> Ptr Net.SockAddr -> IO CInt
+#endif
 
 warnMsg :: Show e => String -> e -> IO ()
 warnMsg m = hPutStrLn stderr . (++) ("Network.ONCRPC.Client: " ++ m ++ ": ") . show
@@ -90,6 +115,11 @@ clientConnect c = modifyMVar (clientState c) $ conn (clientServer c) where
   conn ClientServerPort{..} s = do
     addr:_ <- Net.getAddrInfo (Just Net.defaultHints{ Net.addrSocketType = Net.Stream }) (Just clientServerHost) (Just clientServerPort)
     sock <- Net.socket (Net.addrFamily addr) (Net.addrSocketType addr) (Net.addrProtocol addr)
+#ifdef BINDRESVPORT
+    when clientBindResvPort $
+      throwSocketErrorIfMinus1Retry_ "bindresvport" $
+        c_bindresvport (Net.fdSocket sock) nullPtr
+#endif
     Net.connect sock (Net.addrAddress addr)
     resend sock (stateRequests s)
     return (s{ stateSocket = Just sock }, sock)

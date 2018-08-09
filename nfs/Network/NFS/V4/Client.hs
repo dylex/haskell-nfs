@@ -1,5 +1,6 @@
 module Network.NFS.V4.Client
   ( Client(..)
+  , openClientServer
   , openClient
   , closeClient
   , setClientAuth
@@ -30,9 +31,9 @@ setClientAuth cred verf client = client
 
 -- |See 'RPC.openClient'.
 -- In addition, this negotiates a minor version and other client information with the server.
-openClient :: Net.HostName -> IO Client
-openClient h = do
-  rpc <- RPC.openClient $ RPC.ClientServerPort h "nfs"
+openClientServer :: RPC.ClientServer -> IO Client
+openClientServer h = do
+  rpc <- RPC.openClient h
   let tryminor 0 = return 0
       tryminor m = do
         NFS.COMPOUND4res stat _ _ <- RPC.rpcCall rpc (NFS.nFSPROC4_COMPOUND procs)
@@ -46,6 +47,10 @@ openClient h = do
     { clientRPC = rpc
     , clientMinorVers = minor
     }
+
+-- |Call 'openClientServer' with the default nfs port.
+openClient :: Net.HostName -> IO Client
+openClient h = openClientServer $ RPC.makeClientServerPort h "nfs"
 
 -- |See 'RPC.closeClient'.
 closeClient :: Client -> IO ()
