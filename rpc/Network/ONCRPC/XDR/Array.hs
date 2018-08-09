@@ -2,6 +2,7 @@
 
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ExplicitNamespaces #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -10,6 +11,9 @@
 module Network.ONCRPC.XDR.Array
   ( KnownNat
   , KnownOrdering
+  , OpaqueString(..)
+  , opaqueLengthArray
+  , unOpaqueLengthArray
   , LengthArray
   , FixedLengthArray
   , fixedLengthArrayLength
@@ -32,16 +36,45 @@ module Network.ONCRPC.XDR.Array
   ) where
 
 import           Prelude hiding (length, take, drop, replicate)
+import           Control.Monad (guard)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Base16 as Hex
 import qualified Data.List as List
 import           Data.Maybe (fromMaybe, fromJust)
 import           Data.Monoid (Monoid, (<>))
 import           Data.Proxy (Proxy(..))
+import           Data.Semigroup (Semigroup)
 import           Data.String (IsString(..))
 import qualified Data.Vector as V
 import           Data.Word (Word8)
 import           GHC.TypeLits (Nat, KnownNat, natVal, type (+), type CmpNat)
+import           Text.Read (readPrec)
+
+-- |A 'ByteString' that uses hex (base16) for 'Read'/'Show'.
+newtype OpaqueString = OpaqueString{ unOpaqueString :: BS.ByteString }
+  deriving (Eq, Ord, Semigroup, Monoid, HasLength)
+
+instance Show OpaqueString where
+  show = show . Hex.encode . unOpaqueString
+  showsPrec p = showsPrec p . Hex.encode . unOpaqueString
+
+instance Read OpaqueString where
+  readPrec = do
+    b <- readPrec
+    let (e, r) = Hex.decode b
+    guard (BS.null r)
+    return $ OpaqueString e
+
+-- |Allows either hex or character input, dynamically.
+instance IsString OpaqueString where
+  fromString s
+    -- | all isHexDigit s = OpaqueString $ fst $ Hex.decode $ fromString s
+    | BS.null r = OpaqueString e
+    | otherwise = OpaqueString b
+    where
+    b = fromString s
+    (e, r) = Hex.decode b
 
 -- See also MonoFoldable
 class HasLength a where
@@ -82,6 +115,12 @@ instance Array BS.ByteString where
   take = BS.take
   replicate = BS.replicate
   fromList = BS.pack
+
+instance Array OpaqueString where
+  type Elem OpaqueString = Word8
+  take n = OpaqueString . BS.take n . unOpaqueString
+  replicate n = OpaqueString . BS.replicate n
+  fromList = OpaqueString . BS.pack
 
 instance HasLength BSL.ByteString where
   length = fromIntegral . BSL.length
@@ -211,3 +250,9 @@ appendLengthArray (LengthArray a) (LengthArray b) = LengthArray $ mappend a b
 
 fromLengthList :: Array a => LengthArray o n [Elem a] -> LengthArray o n a
 fromLengthList = LengthArray . fromList . unLengthArray
+
+opaqueLengthArray :: LengthArray o n BS.ByteString -> LengthArray o n OpaqueString
+opaqueLengthArray = LengthArray . OpaqueString . unLengthArray
+
+unOpaqueLengthArray :: LengthArray o n OpaqueString -> LengthArray o n BS.ByteString
+unOpaqueLengthArray = LengthArray . unOpaqueString . unLengthArray

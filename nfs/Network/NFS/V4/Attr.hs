@@ -149,11 +149,11 @@ instance RPC.XDR AttrType where
   xdrGet = RPC.xdrGetEnum
 
 decodeAttrs :: NFS.Fattr4 -> Either String [AttrVal]
-decodeAttrs (NFS.Fattr4 m o) = S.runGet (mapM getAttr l) $ unLengthArray o
+decodeAttrs (NFS.Fattr4 m o) = S.runGet (mapM getAttr l) $ RPC.unOpaqueString $ unLengthArray o
   where (l, _) = depackBitmap m
 
 encodeAttrs :: [AttrVal] -> NFS.Fattr4
-encodeAttrs al = NFS.Fattr4 (enpackBitmap $ map fst l) (lengthArray' $ S.runPut $ mapM_ snd l)
+encodeAttrs al = NFS.Fattr4 (enpackBitmap $ map fst l) (lengthArray' $ RPC.OpaqueString $ S.runPut $ mapM_ snd l)
   where l = map head $ List.groupBy ((==) `on` fst) $ List.sortOn fst $ map (attrType &&& putAttr) al
 
 decodeTime :: NFS.Nfstime4 -> POSIXTime

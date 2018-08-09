@@ -27,7 +27,7 @@ streamFile :: Context -> NFS.FileHandle -> Word64 -> Word64 -> Wai.StreamingBody
 streamFile ctx fh start end send done = do
   NFS.READ4res'NFS4_OK (NFS.READ4resok eof lbuf) <- NFS.nfsCall (nfsClient $ context ctx)
     $ NFS.op (NFS.PUTFH4args fh) *> NFS.op (NFS.READ4args NFS.anonymousStateid start $ fromIntegral l)
-  let buf = NFS.unLengthArray lbuf
+  let buf = NFS.unOpaqueString $ NFS.unLengthArray lbuf
   send $ BSB.byteString buf
   let next = start + fromIntegral (BS.length buf)
   if next >= end || eof

@@ -20,6 +20,7 @@ source-repository head
 custom-setup
   setup-depends:
     base >=4.8 && <5,
+    base16-bytestring,
     bytestring,
     Cabal,
     cereal >=0.5.4,
@@ -61,6 +62,7 @@ library
   ghc-options: -Wall
   build-depends:       
     base >=4.8 && <5,
+    base16-bytestring,
     bytestring,
     Cabal,
     cereal >=0.5.4,

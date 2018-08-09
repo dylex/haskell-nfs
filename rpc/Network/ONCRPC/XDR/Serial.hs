@@ -226,14 +226,14 @@ instance (KnownNat n, XDR a) => XDR (LengthArray 'LT n (V.Vector a)) where
   xdrGet = xdrGetBoundedArray $ \l -> V.replicateM (fromIntegral l) xdrGet
 
 instance KnownNat n => XDR (LengthArray 'EQ n BS.ByteString) where
-  xdrType o = fixedLength o "opaque"
+  xdrType o = fixedLength o "string"
   xdrPut o =
     xdrPutByteString (fromInteger $ natVal (Proxy :: Proxy n)) $ unLengthArray o
   xdrGet = unsafeLengthArray <$>
     xdrGetByteString (fromInteger $ natVal (Proxy :: Proxy n))
 
 instance KnownNat n => XDR (LengthArray 'LT n BS.ByteString) where
-  xdrType o = variableLength o "opaque"
+  xdrType o = variableLength o "string"
   xdrPut o = do
     xdrPut l
     xdrPutByteString l b
@@ -241,6 +241,16 @@ instance KnownNat n => XDR (LengthArray 'LT n BS.ByteString) where
     l = bsLength b
     b = unLengthArray o
   xdrGet = xdrGetBoundedArray xdrGetByteString
+
+instance KnownNat n => XDR (LengthArray 'EQ n OpaqueString) where
+  xdrType o = fixedLength o "opaque"
+  xdrPut = xdrPut . unOpaqueLengthArray
+  xdrGet = opaqueLengthArray <$> xdrGet
+
+instance KnownNat n => XDR (LengthArray 'LT n OpaqueString) where
+  xdrType o = variableLength o "opaque"
+  xdrPut = xdrPut . unOpaqueLengthArray
+  xdrGet = opaqueLengthArray <$> xdrGet
 
 instance XDR () where
   xdrType () = "void"

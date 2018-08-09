@@ -70,6 +70,7 @@ import qualified Data.Text as T
 import           Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import           Data.Time.Clock (UTCTime)
 import           Data.Time.Format (formatTime, parseTimeM, defaultTimeLocale)
+import           Data.Semigroup (Semigroup(..))
 import           Data.Word (Word32, Word64)
 import qualified Data.XML.Types as XT
 import           Network.URI (URI)
@@ -145,6 +146,9 @@ instance Read Depth where
   readsPrec _ ('1':r) = [(Depth1, r)]
   readsPrec _ ('i':'n':'f':'i':'n':'i':'t':'y':r) = [(DepthInfinity, r)]
   readsPrec _ _ = []
+
+instance Semigroup Depth where
+  (<>) = max
 
 instance Monoid Depth where
   mempty = Depth0
