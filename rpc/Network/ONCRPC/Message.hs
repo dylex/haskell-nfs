@@ -140,7 +140,7 @@ getReply (RPC.Reply_body'MSG_DENIED r) =
 
 instance XDR.XDR a => XDR.XDR (Reply a) where
   xdrType _ = "reply_body_result"
-  xdrPut (ReplyFail e) = fail e
+  xdrPut (ReplyFail e) = error e
   xdrPut r = do
     xdrPut b
     mapM_ xdrPut a

@@ -15,12 +15,18 @@ import qualified Network.Socket as Net
 import           Network.ONCRPC.RecordMarking
 
 sendTransport :: Net.Socket -> BSL.ByteString -> IO ()
-sendTransport sock@(Net.MkSocket _ _ Net.Stream _ _) = sendRecord sock
-sendTransport _ = const $ fail "ONCRPC: Unsupported socket type"
+sendTransport sock b = do
+  t <- Net.getSocketType sock
+  if t == Net.Stream
+    then sendRecord sock b
+    else fail "ONCRPC: Unsupported socket type"
 
 recvTransport :: Net.Socket -> RecordState -> IO (BS.ByteString, RecordState)
-recvTransport sock@(Net.MkSocket _ _ Net.Stream _ _) = recvRecord sock
-recvTransport _ = const $ fail "ONCRPC: Unsupported socket type"
+recvTransport sock r = do
+  t <- Net.getSocketType sock
+  if t == Net.Stream
+    then recvRecord sock r
+    else fail "ONCRPC: Unsupported socket type"
 
 data TransportState = TransportState
   { _bufferState :: BS.ByteString

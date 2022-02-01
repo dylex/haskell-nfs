@@ -118,7 +118,8 @@ clientConnect c = modifyMVar (clientState c) $ conn (clientServer c) where
 #ifdef BINDRESVPORT
     when clientBindResvPort $
       throwSocketErrorIfMinus1Retry_ "bindresvport" $
-        c_bindresvport (Net.fdSocket sock) nullPtr
+        Net.withFdSocket sock $ \fd ->
+          c_bindresvport fd nullPtr
 #endif
     Net.connect sock (Net.addrAddress addr)
     resend sock (stateRequests s)

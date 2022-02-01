@@ -62,19 +62,14 @@ instance Show OpaqueString where
 instance Read OpaqueString where
   readPrec = do
     b <- readPrec
-    let (e, r) = Hex.decode b
-    guard (BS.null r)
-    return $ OpaqueString e
+    either fail (return . OpaqueString) $ Hex.decode b
 
 -- |Allows either hex or character input, dynamically.
 instance IsString OpaqueString where
-  fromString s
+  fromString s = OpaqueString $ either (\_ -> b) id $ Hex.decode b
     -- | all isHexDigit s = OpaqueString $ fst $ Hex.decode $ fromString s
-    | BS.null r = OpaqueString e
-    | otherwise = OpaqueString b
     where
     b = fromString s
-    (e, r) = Hex.decode b
 
 -- See also MonoFoldable
 class HasLength a where

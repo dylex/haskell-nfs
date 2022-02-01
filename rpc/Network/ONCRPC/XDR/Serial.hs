@@ -77,7 +77,7 @@ instance XDR XDR.Bool where
 -- The 'Enum' instance is derived automatically to allow 'succ', etc. to work usefully in Haskell, whereas the 'XDREnum' reflects the XDR-defined values.
 class (XDR a, Enum a) => XDREnum a where
   xdrFromEnum :: a -> XDR.Int
-  xdrToEnum :: Monad m => XDR.Int -> m a
+  xdrToEnum :: MonadFail m => XDR.Int -> m a
 
 instance XDREnum XDR.Int where
   xdrFromEnum = id
@@ -87,9 +87,9 @@ instance XDREnum XDR.UnsignedInt where
   xdrFromEnum = fromIntegral
   xdrToEnum = return . fromIntegral
 
--- |Version of 'xdrToEnum' that fails at runtime for invalid values: @fromMaybe undefined . 'xdrToEnum'@.
+-- |Version of 'xdrToEnum' that fails at runtime for invalid values: @fromJust . 'xdrToEnum'@.
 xdrToEnum' :: XDREnum a => XDR.Int -> a
-xdrToEnum' = runIdentity . xdrToEnum
+xdrToEnum' = fromJust . xdrToEnum
 
 -- |Default implementation of 'xdrPut' for 'XDREnum'.
 xdrPutEnum :: XDREnum a => a -> S.Put
@@ -163,8 +163,9 @@ bsLength :: BS.ByteString -> XDR.Length
 bsLength = fromIntegral . BS.length
 
 xdrPutByteString :: XDR.Length -> BS.ByteString -> S.Put
-xdrPutByteString l b = do
-  unless (bsLength b == l) $ fail "xdrPutByteString: incorrect length"
+xdrPutByteString l b
+  | bsLength b /= l = error "xdrPutByteString: incorrect length"
+  | otherwise = do
   S.putByteString b
   xdrPutPad l
 

@@ -28,7 +28,7 @@ readDir_ ent ctx = loop (constLengthArray 0) 0 where
       else loop verf cook
   list (NFS.Entry4 cook name attrs next) = do
     mapM_ ent $ do
-      name' <- mfilter (validFileName (context ctx)) $ fromOpaque name
+      name' <- maybe (Left "error") Right $ mfilter (validFileName (context ctx)) $ fromOpaque name
       attrs' <- decodeFileInfo attrs
       return ctx{ contextFile = attrs'{ filePath = filePath (contextFile ctx) ++ [name'] } }
     maybe (return cook) list next

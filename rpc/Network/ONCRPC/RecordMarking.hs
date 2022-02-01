@@ -1,3 +1,4 @@
+{-# LANGUAGE CApiFFI #-}
 module Network.ONCRPC.RecordMarking
   ( sendRecord
   , RecordState(RecordStart)
@@ -16,6 +17,9 @@ import qualified Network.Socket.All as NetAll
 import qualified Network.Socket.ByteString as NetBS
 import qualified Network.Socket.ByteString.Lazy as NetBSL
 
+foreign import capi unsafe "arpa/inet.h htonl" htonl :: Word32 -> Word32
+foreign import capi unsafe "arpa/inet.h ntohl" ntohl :: Word32 -> Word32
+
 -- |A raw RPC record fragment header, stored in network byte order.
 type FragmentHeader = Word32
 
@@ -28,10 +32,10 @@ maxFragmentSize = pred $ bit fragmentHeaderBit
 unFragmentHeader :: Integral i => FragmentHeader -> (Bool, i)
 unFragmentHeader w =
   (testBit w' fragmentHeaderBit, fromIntegral $ clearBit w' fragmentHeaderBit)
-  where w' = Net.ntohl w
+  where w' = ntohl w
 
 mkFragmentHeader :: Integral i => Bool -> i -> FragmentHeader
-mkFragmentHeader l n = Net.htonl $ sb l $ fromIntegral n where
+mkFragmentHeader l n = htonl $ sb l $ fromIntegral n where
   sb True x = setBit x fragmentHeaderBit
   sb False x = x
 

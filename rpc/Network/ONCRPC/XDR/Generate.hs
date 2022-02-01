@@ -56,7 +56,7 @@ dataDecl n con derive = HS.DataDecl () (HS.DataType ()) Nothing (HS.DHead () $ H
 constantType :: HS.Type ()
 constantType = HS.TyForall ()
   Nothing
-  (Just $ HS.CxSingle () $ HS.ClassA () ("Prelude"!"Integral") [t])
+  (Just $ HS.CxSingle () $ HS.TypeA () (HS.TyApp () (HS.TyCon () ("Prelude"!"Integral")) t))
   t
   where
   t = HS.TyVar () $ HS.name "a"
@@ -261,14 +261,14 @@ data GenerateOptions = GenerateOptions
 
 -- |Parse an XDR specification and generate a Haskell module, or fail on error.
 -- The 'String' argument provides a description of the input to use in parse errors.
-generateModule :: Monad m => GenerateOptions -> String -> BSLC.ByteString -> m (HS.Module ())
+generateModule :: MonadFail m => GenerateOptions -> String -> BSLC.ByteString -> m (HS.Module ())
 generateModule GenerateOptions{..} n b = do
   (d, s) <- either (fail . show) return $ XDR.parse n b
   return $ specification generateModuleName $ reident generateReidentOptions s d
 
 -- |Parse an XDR specification and generate pretty-printed Haskell source string, or fail on error.
 -- The 'String' argument provides a description of the input to use in parse errors.
-generate :: Monad m => GenerateOptions -> String -> BSLC.ByteString -> m String
+generate :: MonadFail m => GenerateOptions -> String -> BSLC.ByteString -> m String
 generate opts n s = do
   m <- generateModule opts n s
   return $ "-- |Generated from " ++ n ++ " by <https://github.com/dylex/oncrpc hsrpcgen>\n"
