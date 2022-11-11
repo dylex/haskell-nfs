@@ -1,13 +1,13 @@
 resolver: lts-18.28
 extra-deps:
-- web-inv-route-0.1.3.1
+- web-inv-route-0.1.3.2
 - invertible-hxt-0.1
 - git: https://github.com/dylex/invertible
-  commit: fbeb1303e3decbcaa2502278dc2d85c57910c8d9 # 0.2.0.7
+  commit: e203c6a729fde87b1f903c3f468f739a085fb446
   subdirs:
   - conduit
 - git: https://github.com/dylex/waimwork
-  commit: 0ec1caed3aaa4583430484b2b63b5793b94cdb61
+  commit: 8ccaa63ac6b80a4ebc9ad7d61ca38cbb009e8f3c
 packages:
 - rpc
 - nfs
