@@ -1,5 +1,5 @@
 name:                ONC-RPC
-version:             0.1
+version:             0.2
 synopsis:            ONC RPC (aka Sun RPC) and XDR library
 description:         Tools and library for writing ONC (Sun) RPC clients and servers.  Provides equivalent functionality to rpcgen and librpcsvc, except in pure Haskell.  The hsrpcgen tool (and Cabal preprocessor library) allows .x XDR files to generate Haskell protocol descriptors.  The library provides a client interface to use these descriptions to make RPC calls.
 license:             Apache-2.0
